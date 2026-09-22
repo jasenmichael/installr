@@ -1,5 +1,6 @@
 CONFIG_DEST=${CONFIG_DEST:-}
 CONFIG_INSTALLED=${CONFIG_INSTALLED:-no}
+CONFIG_ACTION=${CONFIG_ACTION:-skipped}
 USED_SUDO=${USED_SUDO:-no}
 
 write_root() {
@@ -78,3 +79,24 @@ fi
 run_rm "$APP_DIR"
 EOF
 as_root chmod +x "$APP_DIR/uninstall.sh"
+
+if [[ ${HAS_VERSION:-no} == yes ]]; then
+  printf 'version: %s\n' "$APP_VERSION"
+fi
+printf 'installed: %s\n' "$APP_DIR"
+printf 'symlink: %s\n' "$BIN_DIR/$APP_NAME"
+case ${CONFIG_ACTION:-skipped} in
+  copied) printf 'config: copied %s\n' "$CONFIG_DEST" ;;
+  replaced) printf 'config: replaced %s\n' "$CONFIG_DEST" ;;
+  left) printf 'config: left in place %s\n' "$CONFIG_DEST" ;;
+  *) printf 'config: skipped\n' ;;
+esac
+if [[ $USED_SUDO == yes ]]; then
+  printf 'scope: %s (sudo)\n' "$SCOPE"
+else
+  printf 'scope: %s\n' "$SCOPE"
+fi
+case :$PATH: in
+  *:"$BIN_DIR":*) ;;
+  *) printf 'export PATH="%s:$PATH"\n' "$BIN_DIR" ;;
+esac

@@ -36,6 +36,8 @@ EOF
 @test "example and dogfood configs pass --check" {
   run --separate-stderr "$REPO_ROOT/src/installr.sh" --check --config "$REPO_ROOT/installr.conf.example"
   [ "$status" -eq 0 ]
+  # Dogfood VERSION=!cat VERSION needs the repo cwd.
+  cd "$REPO_ROOT"
   run --separate-stderr "$REPO_ROOT/src/installr.sh" --check --config "$REPO_ROOT/installr.conf"
   [ "$status" -eq 0 ]
 }

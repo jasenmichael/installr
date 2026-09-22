@@ -212,7 +212,8 @@ In order:
 6. Copy the binary to the app dir (`$LOCAL_PREFIX/share/<APP_NAME>/` locally, `$GLOBAL_PREFIX/<APP_NAME>/` globally), symlink under `<prefix>/bin/<APP_NAME>`.
 7. If `DEFAULT_CONFIG` is set, copy it to `CONFIG_PATH` (prompt / `--yes` / no-TTY rules below).
 8. Write `install.log` and `uninstall.sh` into the app dir.
-9. If the bin directory is not on `PATH`, print `export PATH="<bin-dir>:$PATH"` and exit 0.
+9. Print a short install summary on stdout (version if `VERSION` was set, app dir, symlink, config action, scope; mention sudo when used). Help and version exit before this.
+10. If the bin directory is not on `PATH`, print `export PATH="<bin-dir>:$PATH"` and exit 0.
 
 ## Install layout
 
@@ -279,6 +280,8 @@ Running the script is the confirmation. No second prompt. A reinstall overwrites
 | `--config PATH` / `INSTALLR_CONFIG` | Config path (default `./installr.conf`). |
 | `--output PATH` / `INSTALLR_OUTPUT` | Output path (overrides `INSTALL_SCRIPT`). |
 | `--check` | Validate only; write nothing. |
+
+A successful write prints `wrote <path>` on stdout. `--check`, `--help`, and `--version` stay quiet aside from their own output.
 
 Precedence: flags > env > config file > defaults. Help and version win before config load.
 

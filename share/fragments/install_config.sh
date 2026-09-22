@@ -2,10 +2,15 @@ DEFAULT_CONFIG=__Q_DEFAULT_CONFIG__
 CONFIG_EXT=__Q_CONFIG_EXT__
 CONFIG_INSTALLED=no
 CONFIG_DEST=
+CONFIG_ACTION=skipped
 if [[ -n $DEFAULT_CONFIG ]]; then
   CONFIG_DEST=__CONFIG_DEST__
   replace=no
-  if [[ ! -e $CONFIG_DEST ]]; then
+  existed=no
+  if [[ -e $CONFIG_DEST ]]; then
+    existed=yes
+  fi
+  if [[ $existed == no ]]; then
     replace=yes
   elif [[ $ASSUME_YES == yes ]]; then
     replace=yes
@@ -19,5 +24,12 @@ if [[ -n $DEFAULT_CONFIG ]]; then
     mkdir -p -- "$(dirname -- "$CONFIG_DEST")"
     cp -- "$STAGE/$DEFAULT_CONFIG" "$CONFIG_DEST"
     CONFIG_INSTALLED=yes
+    if [[ $existed == yes ]]; then
+      CONFIG_ACTION=replaced
+    else
+      CONFIG_ACTION=copied
+    fi
+  else
+    CONFIG_ACTION=left
   fi
 fi

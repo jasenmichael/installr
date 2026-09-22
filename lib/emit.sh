@@ -30,6 +30,12 @@ render_fragment() {
     gh_version=$APP_VERSION_RESOLVED
   fi
   local app_version=${APP_VERSION_RESOLVED:-unknown}
+  local has_version=no
+  if [[ -n $APP_VERSION_RESOLVED ]]; then
+    has_version=yes
+  fi
+  text=$(replace_token "$text" __APP_NAME_BARE__ "${CONF[APP_NAME]}")
+  text=$(replace_token "$text" __HAS_VERSION__ "$has_version")
   text=$(replace_token "$text" __Q_APP_NAME__ "$(q "${CONF[APP_NAME]}")")
   text=$(replace_token "$text" __Q_APP_VERSION__ "$(q "$app_version")")
   text=$(replace_token "$text" __Q_GH_ASSET_URL__ "$(q "${CONF[GH_ASSET_URL]:-}")")
@@ -102,4 +108,5 @@ emit_install_sh() {
     render_fragment install_record
   } > "$out"
   chmod +x "$out"
+  printf 'wrote %s\n' "$out"
 }

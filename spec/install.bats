@@ -76,9 +76,14 @@ EOF
   write_repo_config
   run --separate-stderr "$INSTALLR"
   [ "$status" -eq 0 ]
+  [[ "$output" == *"wrote install.sh"* ]]
   mkdir -p "$WORK/home"
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh"
   [ "$status" -eq 0 ]
+  [[ "$output" == *"$WORK/home/.local/share/dummy"* ]]
+  [[ "$output" == *"$WORK/home/.local/bin/dummy"* ]]
+  [[ "$output" == *"config: skipped"* ]]
+  [[ "$output" == *"scope: local"* ]]
   run --separate-stderr "$WORK/home/.local/bin/dummy"
   [ "$status" -eq 0 ]
   [ "$output" = "dummy ok" ]
@@ -138,6 +143,8 @@ EOF
   mkdir -p "$WORK/home"
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh"
   [ "$status" -eq 0 ]
+  [[ "$output" == *"$WORK/home/.config/dummy.toml"* ]]
+  [[ "$output" == *"config: copied"* ]]
   [ -f "$WORK/home/.config/dummy.toml" ]
   grep -F -q 'name = "dummy"' "$WORK/home/.config/dummy.toml"
   grep -F -q 'CONFIG_INSTALLED=yes' "$WORK/home/.local/share/dummy/install.log"
@@ -158,6 +165,7 @@ EOF
   printf 'name = "keep"\n' > "$WORK/home/.config/dummy.toml"
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh"
   [ "$status" -eq 0 ]
+  [[ "$output" == *"config: left in place $WORK/home/.config/dummy.toml"* ]]
   grep -F -q 'CONFIG_INSTALLED=no' "$WORK/home/.local/share/dummy/install.log"
   grep -F -q 'name = "keep"' "$WORK/home/.config/dummy.toml"
   run --separate-stderr "$WORK/home/.local/share/dummy/uninstall.sh"
@@ -177,6 +185,7 @@ EOF
   printf 'name = "keep"\n' > "$WORK/home/.config/dummy.toml"
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh" --yes
   [ "$status" -eq 0 ]
+  [[ "$output" == *"config: replaced $WORK/home/.config/dummy.toml"* ]]
   grep -F -q 'name = "dummy"' "$WORK/home/.config/dummy.toml"
   grep -F -q 'CONFIG_INSTALLED=yes' "$WORK/home/.local/share/dummy/install.log"
 }
@@ -247,6 +256,7 @@ EOF
   : > "$WORK/sudo.log"
   run --separate-stderr env HOME="$WORK/home" PATH="$WORK/bin:$PATH" SUDO_LOG="$WORK/sudo.log" "$WORK/install.sh" --global
   [ "$status" -eq 0 ]
+  [[ "$output" == *"scope: global (sudo)"* ]]
   [ -s "$WORK/sudo.log" ]
   grep -F -q 'SUDO=yes' "$WORK/opt/dummy/install.log"
   : > "$WORK/sudo.log"

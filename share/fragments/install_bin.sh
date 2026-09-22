@@ -27,8 +27,3 @@ as_root mkdir -p -- "$APP_DIR" "$BIN_DIR"
 as_root cp -- "$FETCHED_BIN" "$APP_DIR/$APP_NAME"
 as_root chmod +x "$APP_DIR/$APP_NAME"
 as_root ln -sfn -- "$APP_DIR/$APP_NAME" "$BIN_DIR/$APP_NAME"
-
-case :$PATH: in
-  *:"$BIN_DIR":*) ;;
-  *) printf 'export PATH="%s:$PATH"\n' "$BIN_DIR" ;;
-esac

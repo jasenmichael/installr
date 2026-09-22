@@ -59,7 +59,7 @@ GH_BIN_PATH_darwin_arm64=bin/myapp-apple
 
 Supported override keys: `GH_BIN_PATH_linux_amd64`, `GH_BIN_PATH_linux_arm64`, `GH_BIN_PATH_darwin_amd64`, `GH_BIN_PATH_darwin_arm64`. A specific key wins over `GH_BIN_PATH` for that OS and arch.
 
-The generated `install.sh` starts with `#!/usr/bin/env bash`, sets `set -euo pipefail`, detects OS and arch, contains the asset URL pattern, and downloads with `curl`. A release `install.sh` does not contain `git clone`.
+The generated `install.sh` starts with `#!/usr/bin/env bash`, then comment lines naming installr (and the app when known) plus `https://github.com/jasenmichael/installr`, sets `set -euo pipefail`, detects OS and arch, contains the asset URL pattern, and downloads with `curl`. A release `install.sh` does not contain `git clone`. A successful generate prints `wrote <path>` on stdout.
 
 ## Repo
 
@@ -107,7 +107,7 @@ BIN=dist/{{name}}
 
 ## Install layout
 
-`SCOPE` is an optional author lock: `local` or `global`. Invalid values make installr exit 1 and name `SCOPE` on stderr. When omitted, `install.sh` defaults to local and the user may pass `--local` or `--global`. When `SCOPE=local`, `--global` exits non-zero and installs nothing. When `SCOPE=global`, a run with no flag installs global, and `--local` exits non-zero and installs nothing. Local prefix defaults to `$HOME/.local`. Global prefix defaults to `/usr/local`. A global install uses `sudo` when the user is not root, and the log records `SUDO=yes`. `uninstall.sh` uses `sudo` for removes when `SUDO=yes`. A local install copies the binary to `$LOCAL_PREFIX/share/<APP_NAME>/<APP_NAME>` (default `$HOME/.local/share/<APP_NAME>/<APP_NAME>`) and creates a symlink at `$LOCAL_PREFIX/bin/<APP_NAME>` (default `$HOME/.local/bin/<APP_NAME>`). A global install copies to `$GLOBAL_PREFIX/<APP_NAME>/<APP_NAME>` and symlinks `$GLOBAL_PREFIX/bin/<APP_NAME>` with no `share/` segment. If that `bin` directory is not on `PATH`, `install.sh` prints `export PATH="<bin-dir>:$PATH"` and still exits 0.
+`SCOPE` is an optional author lock: `local` or `global`. Invalid values make installr exit 1 and name `SCOPE` on stderr. When omitted, `install.sh` defaults to local and the user may pass `--local` or `--global`. When `SCOPE=local`, `--global` exits non-zero and installs nothing. When `SCOPE=global`, a run with no flag installs global, and `--local` exits non-zero and installs nothing. Local prefix defaults to `$HOME/.local`. Global prefix defaults to `/usr/local`. A global install uses `sudo` when the user is not root, and the log records `SUDO=yes`. `uninstall.sh` uses `sudo` for removes when `SUDO=yes`. A local install copies the binary to `$LOCAL_PREFIX/share/<APP_NAME>/<APP_NAME>` (default `$HOME/.local/share/<APP_NAME>/<APP_NAME>`) and creates a symlink at `$LOCAL_PREFIX/bin/<APP_NAME>` (default `$HOME/.local/bin/<APP_NAME>`). A global install copies to `$GLOBAL_PREFIX/<APP_NAME>/<APP_NAME>` and symlinks `$GLOBAL_PREFIX/bin/<APP_NAME>` with no `share/` segment. On success, `install.sh` prints a short stdout summary (version when `VERSION` was set, app dir, symlink, config action, scope; `(sudo)` when sudo was used). Help and version exit before the summary. If that `bin` directory is not on `PATH`, `install.sh` also prints `export PATH="<bin-dir>:$PATH"` and still exits 0.
 
 `INSTALL_SCRIPT` defaults to `install.sh`. `CONFIG_EXT` defaults to `toml`. `CONFIG_PATH` defaults to `$HOME/.config/$APP_NAME.$CONFIG_EXT`. `DEFAULT_CONFIG` is a path inside the fetched tree; empty skips config install.
 
