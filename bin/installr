@@ -1,0 +1,558 @@
+#!/usr/bin/env bash
+set -euo pipefail
+INSTALLR_EMBEDDED=1
+FRAGMENT_build=$(cat <<'INSTALLR_FRAGMENT_END'
+( cd "$STAGE" && bash -lc __Q_BUILD__ )
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_deps=$(cat <<'INSTALLR_FRAGMENT_END'
+for dep in __DEPS__; do
+  command -v "$dep" >/dev/null 2>&1 || {
+    printf 'install.sh: missing dep: %s\n' "$dep" >&2
+    exit 1
+  }
+done
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_fetch_release=$(cat <<'INSTALLR_FRAGMENT_END'
+command -v curl >/dev/null 2>&1 || {
+  printf 'install.sh: missing dep: curl\n' >&2
+  exit 1
+}
+
+GH_VERSION=__Q_GH_VERSION__
+GH_EXT=__Q_GH_EXT__
+GH_REPO=__Q_GH_REPO__
+GH_ARCHIVE=__Q_GH_ARCHIVE__
+BIN_INSIDE=__Q_GH_BIN_PATH__
+BIN_INSIDE_OVERRIDE=
+case "${OS}_${ARCH}" in
+  linux_amd64) BIN_INSIDE_OVERRIDE=__Q_GH_BIN_PATH_linux_amd64__ ;;
+  linux_arm64) BIN_INSIDE_OVERRIDE=__Q_GH_BIN_PATH_linux_arm64__ ;;
+  darwin_amd64) BIN_INSIDE_OVERRIDE=__Q_GH_BIN_PATH_darwin_amd64__ ;;
+  darwin_arm64) BIN_INSIDE_OVERRIDE=__Q_GH_BIN_PATH_darwin_arm64__ ;;
+esac
+if [[ -n $BIN_INSIDE_OVERRIDE ]]; then
+  BIN_INSIDE=$BIN_INSIDE_OVERRIDE
+fi
+
+ASSET_URL=__Q_GH_ASSET_URL__
+ASSET_URL=${ASSET_URL//\{\{name\}\}/$APP_NAME}
+ASSET_URL=${ASSET_URL//\{\{os\}\}/$OS}
+ASSET_URL=${ASSET_URL//\{\{arch\}\}/$ARCH}
+ASSET_URL=${ASSET_URL//\{\{version\}\}/$GH_VERSION}
+ASSET_URL=${ASSET_URL//\{\{ext\}\}/$GH_EXT}
+ASSET_URL=${ASSET_URL//\{\{repo\}\}/$GH_REPO}
+BIN_INSIDE=${BIN_INSIDE//\{\{name\}\}/$APP_NAME}
+BIN_INSIDE=${BIN_INSIDE//\{\{os\}\}/$OS}
+BIN_INSIDE=${BIN_INSIDE//\{\{arch\}\}/$ARCH}
+
+if [[ -z $GH_ARCHIVE ]]; then
+  case $ASSET_URL in
+    *.tar.gz | *.tgz) GH_ARCHIVE=tar.gz ;;
+    *.zip) GH_ARCHIVE=zip ;;
+    *) GH_ARCHIVE=raw ;;
+  esac
+fi
+
+STAGE=$(mktemp -d)
+case $GH_ARCHIVE in
+  raw)
+    curl -fsSL "$ASSET_URL" -o "$STAGE/$APP_NAME"
+    FETCHED_BIN=$STAGE/$APP_NAME
+    ;;
+  tar.gz)
+    curl -fsSL "$ASSET_URL" -o "$STAGE/asset.tar.gz"
+    tar -xzf "$STAGE/asset.tar.gz" -C "$STAGE"
+    FETCHED_BIN=$STAGE/$BIN_INSIDE
+    ;;
+  zip)
+    curl -fsSL "$ASSET_URL" -o "$STAGE/asset.zip"
+    unzip -q "$STAGE/asset.zip" -d "$STAGE"
+    FETCHED_BIN=$STAGE/$BIN_INSIDE
+    ;;
+  *)
+    printf 'install.sh: unknown archive: %s\n' "$GH_ARCHIVE" >&2
+    exit 1
+    ;;
+esac
+chmod +x "$FETCHED_BIN"
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_fetch_repo=$(cat <<'INSTALLR_FRAGMENT_END'
+command -v git >/dev/null 2>&1 || {
+  printf 'install.sh: missing dep: git\n' >&2
+  exit 1
+}
+
+STAGE=$(mktemp -d)
+git clone --depth 1 --branch __Q_REPO_REF__ __Q_REPO_URL__ "$STAGE"
+
+BIN_PATTERN=__Q_BIN__
+BIN_OVERRIDE=
+case "${OS}_${ARCH}" in
+  linux_amd64) BIN_OVERRIDE=__Q_BIN_linux_amd64__ ;;
+  linux_arm64) BIN_OVERRIDE=__Q_BIN_linux_arm64__ ;;
+  darwin_amd64) BIN_OVERRIDE=__Q_BIN_darwin_amd64__ ;;
+  darwin_arm64) BIN_OVERRIDE=__Q_BIN_darwin_arm64__ ;;
+  *)
+    printf 'install.sh: no binary for %s-%s\n' "$OS" "$ARCH" >&2
+    exit 1
+    ;;
+esac
+
+if [[ -n $BIN_OVERRIDE ]]; then
+  BIN_REL=$BIN_OVERRIDE
+elif [[ -n $BIN_PATTERN ]]; then
+  BIN_REL=$BIN_PATTERN
+  BIN_REL=${BIN_REL//\{\{name\}\}/$APP_NAME}
+  BIN_REL=${BIN_REL//\{\{os\}\}/$OS}
+  BIN_REL=${BIN_REL//\{\{arch\}\}/$ARCH}
+else
+  printf 'install.sh: no binary path for %s-%s\n' "$OS" "$ARCH" >&2
+  exit 1
+fi
+
+FETCHED_BIN=$STAGE/$BIN_REL
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_header=$(cat <<'INSTALLR_FRAGMENT_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_NAME=__Q_APP_NAME__
+SCOPE_LOCK=__Q_SCOPE_LOCK__
+if [[ -n $SCOPE_LOCK ]]; then
+  SCOPE=$SCOPE_LOCK
+else
+  SCOPE=local
+fi
+ASSUME_YES=no
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --local)
+      if [[ $SCOPE_LOCK == global ]]; then
+        printf 'install.sh: SCOPE is global; --local is not allowed\n' >&2
+        exit 1
+      fi
+      SCOPE=local
+      shift
+      ;;
+    --global)
+      if [[ $SCOPE_LOCK == local ]]; then
+        printf 'install.sh: SCOPE is local; --global is not allowed\n' >&2
+        exit 1
+      fi
+      SCOPE=global
+      shift
+      ;;
+    --yes) ASSUME_YES=yes; shift ;;
+    *)
+      printf 'install.sh: unknown argument: %s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_install_bin=$(cat <<'INSTALLR_FRAGMENT_END'
+LOCAL_PREFIX=__LOCAL_PREFIX__
+GLOBAL_PREFIX=__GLOBAL_PREFIX__
+
+if [[ $SCOPE == global ]]; then
+  PREFIX=$GLOBAL_PREFIX
+else
+  PREFIX=$LOCAL_PREFIX
+fi
+
+APP_DIR=$PREFIX/$APP_NAME
+BIN_DIR=$PREFIX/bin
+USED_SUDO=no
+if [[ $SCOPE == global && $(id -u) -ne 0 ]]; then
+  USED_SUDO=yes
+fi
+
+as_root() {
+  if [[ $USED_SUDO == yes ]]; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+as_root mkdir -p -- "$APP_DIR" "$BIN_DIR"
+as_root cp -- "$FETCHED_BIN" "$APP_DIR/$APP_NAME"
+as_root chmod +x "$APP_DIR/$APP_NAME"
+as_root ln -sfn -- "$APP_DIR/$APP_NAME" "$BIN_DIR/$APP_NAME"
+
+case :$PATH: in
+  *:"$BIN_DIR":*) ;;
+  *) printf 'export PATH="%s:$PATH"\n' "$BIN_DIR" ;;
+esac
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_install_config=$(cat <<'INSTALLR_FRAGMENT_END'
+DEFAULT_CONFIG=__Q_DEFAULT_CONFIG__
+CONFIG_EXT=__Q_CONFIG_EXT__
+CONFIG_INSTALLED=no
+CONFIG_DEST=
+if [[ -n $DEFAULT_CONFIG ]]; then
+  CONFIG_DEST=__CONFIG_DEST__
+  replace=no
+  if [[ ! -e $CONFIG_DEST ]]; then
+    replace=yes
+  elif [[ $ASSUME_YES == yes ]]; then
+    replace=yes
+  elif [[ -t 0 ]]; then
+    read -r -p "Replace $CONFIG_DEST? [y/N] " ans || true
+    if [[ ${ans:-} == y || ${ans:-} == Y || ${ans:-} == yes ]]; then
+      replace=yes
+    fi
+  fi
+  if [[ $replace == yes ]]; then
+    mkdir -p -- "$(dirname -- "$CONFIG_DEST")"
+    cp -- "$STAGE/$DEFAULT_CONFIG" "$CONFIG_DEST"
+    CONFIG_INSTALLED=yes
+  fi
+fi
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_install_record=$(cat <<'INSTALLR_FRAGMENT_END'
+CONFIG_DEST=${CONFIG_DEST:-}
+CONFIG_INSTALLED=${CONFIG_INSTALLED:-no}
+USED_SUDO=${USED_SUDO:-no}
+
+write_root() {
+  local dest=$1
+  if [[ $USED_SUDO == yes ]]; then
+    sudo tee "$dest" >/dev/null
+  else
+    cat > "$dest"
+  fi
+}
+
+write_root "$APP_DIR/install.log" <<EOF
+APP_NAME=$APP_NAME
+APP_DIR=$APP_DIR
+BIN=$APP_DIR/$APP_NAME
+SYMLINK=$BIN_DIR/$APP_NAME
+CONFIG=$CONFIG_DEST
+CONFIG_INSTALLED=$CONFIG_INSTALLED
+SUDO=$USED_SUDO
+EOF
+
+write_root "$APP_DIR/uninstall.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+LOG=$HERE/install.log
+if [[ ! -f $LOG ]]; then
+  printf 'uninstall: missing install.log\n' >&2
+  exit 1
+fi
+
+log_get() {
+  local key=$1 line k v
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ -z $line || $line == \#* ]] && continue
+    k=${line%%=*}
+    v=${line#*=}
+    if [[ $k == "$key" ]]; then
+      printf '%s' "$v"
+      return 0
+    fi
+  done < "$LOG"
+  return 1
+}
+
+APP_DIR=$(log_get APP_DIR || true)
+if [[ -z ${APP_DIR:-} || $APP_DIR != "$HERE" ]]; then
+  printf 'uninstall: APP_DIR mismatch\n' >&2
+  exit 1
+fi
+if [[ $APP_DIR == / || $APP_DIR == "${HOME:-}" ]]; then
+  printf 'uninstall: refusing %s\n' "$APP_DIR" >&2
+  exit 1
+fi
+
+SUDO_NEEDED=$(log_get SUDO || true)
+SYMLINK=$(log_get SYMLINK || true)
+CONFIG=$(log_get CONFIG || true)
+CONFIG_INSTALLED=$(log_get CONFIG_INSTALLED || true)
+
+run_rm() {
+  if [[ ${SUDO_NEEDED:-} == yes ]]; then
+    sudo rm -rf -- "$@"
+  else
+    rm -rf -- "$@"
+  fi
+}
+
+if [[ -n ${SYMLINK:-} ]]; then
+  run_rm "$SYMLINK"
+fi
+if [[ ${CONFIG_INSTALLED:-} == yes && -n ${CONFIG:-} ]]; then
+  run_rm "$CONFIG"
+fi
+run_rm "$APP_DIR"
+EOF
+as_root chmod +x "$APP_DIR/uninstall.sh"
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_os_arch=$(cat <<'INSTALLR_FRAGMENT_END'
+case "$(uname -s)" in
+  Linux) OS=linux ;;
+  Darwin) OS=darwin ;;
+  *)
+    printf 'install.sh: unknown os: %s\n' "$(uname -s)" >&2
+    exit 1
+    ;;
+esac
+
+case "$(uname -m)" in
+  x86_64 | amd64) ARCH=amd64 ;;
+  aarch64 | arm64) ARCH=arm64 ;;
+  *)
+    printf 'install.sh: unknown arch: %s\n' "$(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+INSTALLR_FRAGMENT_END
+)
+# Read installr.conf. Assignments only. The file is not sourced.
+
+declare -gA CONF=()
+
+config_key_known() {
+  case "$1" in
+    APP_NAME | SOURCE | GH_ASSET_URL | INSTALL_SCRIPT | REPO_URL | REPO_REF | BUILD | DEPS | BIN | \
+      SCOPE | LOCAL_PREFIX | GLOBAL_PREFIX | DEFAULT_CONFIG | CONFIG_EXT | CONFIG_PATH | \
+      GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | \
+      GH_BIN_PATH_linux_amd64 | GH_BIN_PATH_linux_arm64 | GH_BIN_PATH_darwin_amd64 | GH_BIN_PATH_darwin_arm64 | \
+      BIN_linux_amd64 | BIN_linux_arm64 | BIN_darwin_amd64 | BIN_darwin_arm64) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+load_config() {
+  local file=$1 line key val
+  if [[ ! -f $file ]]; then
+    printf 'installr: config not found: %s\n' "$file" >&2
+    exit 1
+  fi
+  CONF=()
+  while IFS= read -r line || [[ -n $line ]]; do
+    line=${line%$'\r'}
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    [[ -z $line || $line == \#* ]] && continue
+    if [[ $line != *=* ]]; then
+      printf 'installr: invalid config line: %s\n' "$line" >&2
+      exit 1
+    fi
+    key=${line%%=*}
+    key=${key%"${key##*[![:space:]]}"}
+    val=${line#*=}
+    if [[ $val == \"*\" && $val == *\" ]]; then
+      val=${val#\"}
+      val=${val%\"}
+    elif [[ $val == \'*\' && $val == *\' ]]; then
+      val=${val#\'}
+      val=${val%\'}
+    fi
+    if ! config_key_known "$key"; then
+      printf 'installr: unknown key: %s\n' "$key" >&2
+      exit 1
+    fi
+    CONF[$key]=$val
+  done < "$file"
+}
+validate_config() {
+  if [[ -z ${CONF[APP_NAME]:-} ]]; then
+    printf 'installr: APP_NAME is required\n' >&2
+    exit 1
+  fi
+  case ${CONF[SOURCE]:-} in
+    repo | github_release) ;;
+    *)
+      printf 'installr: SOURCE must be repo or github_release\n' >&2
+      exit 1
+      ;;
+  esac
+  if [[ -n ${CONF[SCOPE]:-} ]]; then
+    case ${CONF[SCOPE]} in
+      local | global) ;;
+      *)
+        printf 'installr: SCOPE must be local or global\n' >&2
+        exit 1
+        ;;
+    esac
+  fi
+  if [[ ${CONF[SOURCE]} == github_release && -z ${CONF[GH_ASSET_URL]:-} ]]; then
+    printf 'installr: GH_ASSET_URL is required\n' >&2
+    exit 1
+  fi
+  if [[ ${CONF[SOURCE]} == repo ]]; then
+    if [[ -z ${CONF[REPO_URL]:-} ]]; then
+      printf 'installr: REPO_URL is required\n' >&2
+      exit 1
+    fi
+    if [[ -z ${CONF[BIN]:-} && -z ${CONF[BIN_linux_amd64]:-} && -z ${CONF[BIN_linux_arm64]:-} && \
+      -z ${CONF[BIN_darwin_amd64]:-} && -z ${CONF[BIN_darwin_arm64]:-} ]]; then
+      printf 'installr: BIN is required\n' >&2
+      exit 1
+    fi
+  fi
+}
+q() {
+  local s=$1
+  s=${s//\'/\'\\\'\'}
+  printf "'%s'" "$s"
+}
+
+replace_token() {
+  local text=$1 token=$2 value=$3 pre post
+  while [[ $text == *"$token"* ]]; do
+    pre=${text%%"$token"*}
+    post=${text#*"$token"}
+    text=$pre$value$post
+  done
+  printf '%s' "$text"
+}
+
+render_fragment() {
+  local name=$1 text bin_path=${CONF[GH_BIN_PATH]:-}
+  if [[ -z $bin_path ]]; then
+    bin_path='{{name}}'
+  fi
+  if [[ -n ${INSTALLR_EMBEDDED:-} ]]; then
+    local var="FRAGMENT_${name}"
+    text=${!var-}
+  else
+    text=$(< "$INSTALLR_ROOT/share/fragments/${name}.sh")
+  fi
+  text=$(replace_token "$text" __Q_APP_NAME__ "$(q "${CONF[APP_NAME]}")")
+  text=$(replace_token "$text" __Q_GH_ASSET_URL__ "$(q "${CONF[GH_ASSET_URL]:-}")")
+  text=$(replace_token "$text" __Q_GH_VERSION__ "$(q "${CONF[GH_VERSION]:-latest}")")
+  text=$(replace_token "$text" __Q_GH_EXT__ "$(q "${CONF[GH_EXT]:-}")")
+  text=$(replace_token "$text" __Q_GH_REPO__ "$(q "${CONF[GH_REPO]:-}")")
+  text=$(replace_token "$text" __Q_GH_ARCHIVE__ "$(q "${CONF[GH_ARCHIVE]:-}")")
+  text=$(replace_token "$text" __Q_GH_BIN_PATH__ "$(q "$bin_path")")
+  text=$(replace_token "$text" __Q_REPO_URL__ "$(q "${CONF[REPO_URL]:-}")")
+  text=$(replace_token "$text" __Q_REPO_REF__ "$(q "${CONF[REPO_REF]:-main}")")
+  text=$(replace_token "$text" __Q_BIN__ "$(q "${CONF[BIN]:-}")")
+  text=$(replace_token "$text" __Q_BIN_linux_amd64__ "$(q "${CONF[BIN_linux_amd64]:-}")")
+  text=$(replace_token "$text" __Q_BIN_linux_arm64__ "$(q "${CONF[BIN_linux_arm64]:-}")")
+  text=$(replace_token "$text" __Q_BIN_darwin_amd64__ "$(q "${CONF[BIN_darwin_amd64]:-}")")
+  text=$(replace_token "$text" __Q_BIN_darwin_arm64__ "$(q "${CONF[BIN_darwin_arm64]:-}")")
+  text=$(replace_token "$text" __Q_GH_BIN_PATH_linux_amd64__ "$(q "${CONF[GH_BIN_PATH_linux_amd64]:-}")")
+  text=$(replace_token "$text" __Q_GH_BIN_PATH_linux_arm64__ "$(q "${CONF[GH_BIN_PATH_linux_arm64]:-}")")
+  text=$(replace_token "$text" __Q_GH_BIN_PATH_darwin_amd64__ "$(q "${CONF[GH_BIN_PATH_darwin_amd64]:-}")")
+  text=$(replace_token "$text" __Q_GH_BIN_PATH_darwin_arm64__ "$(q "${CONF[GH_BIN_PATH_darwin_arm64]:-}")")
+  text=$(replace_token "$text" __Q_BUILD__ "$(q "${CONF[BUILD]:-}")")
+  text=$(replace_token "$text" __DEPS__ "$(deps_literal)")
+  text=$(replace_token "$text" __Q_SCOPE_LOCK__ "$(q "${CONF[SCOPE]:-}")")
+  if [[ -n ${CONF[LOCAL_PREFIX]:-} ]]; then
+    text=$(replace_token "$text" __LOCAL_PREFIX__ "$(q "${CONF[LOCAL_PREFIX]}")")
+  else
+    text=$(replace_token "$text" __LOCAL_PREFIX__ '${HOME}/.local')
+  fi
+  if [[ -n ${CONF[GLOBAL_PREFIX]:-} ]]; then
+    text=$(replace_token "$text" __GLOBAL_PREFIX__ "$(q "${CONF[GLOBAL_PREFIX]}")")
+  else
+    text=$(replace_token "$text" __GLOBAL_PREFIX__ '/usr/local')
+  fi
+  text=$(replace_token "$text" __Q_DEFAULT_CONFIG__ "$(q "${CONF[DEFAULT_CONFIG]:-}")")
+  text=$(replace_token "$text" __Q_CONFIG_EXT__ "$(q "${CONF[CONFIG_EXT]:-toml}")")
+  if [[ -n ${CONF[CONFIG_PATH]:-} ]]; then
+    text=$(replace_token "$text" __CONFIG_DEST__ "$(q "${CONF[CONFIG_PATH]}")")
+  else
+    text=$(replace_token "$text" __CONFIG_DEST__ '$HOME/.config/$APP_NAME.$CONFIG_EXT')
+  fi
+  printf '%s\n' "$text"
+}
+
+deps_literal() {
+  local w out=""
+  # shellcheck disable=SC2086
+  for w in ${CONF[DEPS]:-}; do
+    out+="$w "
+  done
+  printf '%s' "${out% }"
+}
+
+emit_install_sh() {
+  local out=$1
+  {
+    render_fragment header
+    render_fragment os_arch
+    if [[ -n ${CONF[DEPS]:-} ]]; then
+      render_fragment deps
+    fi
+    if [[ ${CONF[SOURCE]} == github_release ]]; then
+      render_fragment fetch_release
+    else
+      render_fragment fetch_repo
+      if [[ -n ${CONF[BUILD]:-} ]]; then
+        render_fragment build
+      fi
+    fi
+    render_fragment install_bin
+    render_fragment install_config
+    render_fragment install_record
+  } > "$out"
+  chmod +x "$out"
+}
+main() {
+  local config=${INSTALLR_CONFIG:-./installr.conf}
+  local output=${INSTALLR_OUTPUT:-}
+  local check=0
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --check)
+        check=1
+        shift
+        ;;
+      --config)
+        [[ $# -ge 2 ]] || {
+          printf 'installr: --config needs a path\n' >&2
+          exit 2
+        }
+        config=$2
+        shift 2
+        ;;
+      --output)
+        [[ $# -ge 2 ]] || {
+          printf 'installr: --output needs a path\n' >&2
+          exit 2
+        }
+        output=$2
+        shift 2
+        ;;
+      *)
+        printf 'installr: unknown argument: %s\n' "$1" >&2
+        exit 2
+        ;;
+    esac
+  done
+  load_config "$config"
+  validate_config
+  if [[ $check == 1 ]]; then
+    exit 0
+  fi
+  if [[ -z $output ]]; then
+    output=${CONF[INSTALL_SCRIPT]:-install.sh}
+  fi
+  emit_install_sh "$output"
+}
+main "$@"

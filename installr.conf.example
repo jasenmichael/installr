@@ -1,0 +1,109 @@
+# Annotated catalog of every installr.conf key the parser accepts.
+# Full-line comments (# ...) are ignored. The file is not sourced.
+# Behavior: SPEC.md · Flags and exit codes: CLI.md · Human guide: README.md
+# Repo: https://github.com/jasenmichael/installr
+#
+# This example uses SOURCE=github_release. Repo-only keys are commented below.
+# Copy to installr.conf and edit. Validate with:
+#   ./src/installr.sh --check --config installr.conf.example
+
+# --- Required ---------------------------------------------------------------
+
+# Installed command name and app directory name. Required.
+APP_NAME=installr
+
+# How to fetch the binary: github_release | repo. Required.
+SOURCE=github_release
+
+# --- Output -----------------------------------------------------------------
+
+# Path installr writes. Default: install.sh (relative to the cwd).
+INSTALL_SCRIPT=install.sh
+
+# --- Install scope and prefixes ---------------------------------------------
+
+# Optional lock: omit so the person who runs install.sh chooses with
+# --local / --global (default when omitted: local). Set only to restrict:
+#   SCOPE=local  → only local; --global exits non-zero
+#   SCOPE=global → only global (default install); --local exits non-zero
+# See README.md, CLI.md, SPEC.md.
+# SCOPE=local
+
+# Local install root. Default: $HOME/.local (baked as ${HOME}/.local).
+# LOCAL_PREFIX=$HOME/.local
+
+# Global install root. Default: /usr/local.
+# GLOBAL_PREFIX=/usr/local
+
+# --- App config file (optional) ---------------------------------------------
+
+# Extension used when CONFIG_PATH is empty. Default: toml.
+CONFIG_EXT=toml
+
+# Destination for the default config. Default: $HOME/.config/$APP_NAME.$CONFIG_EXT
+# CONFIG_PATH=$HOME/.config/installr.toml
+
+# Path inside the fetched tree (repo clone or release archive) to copy.
+# Empty or omitted skips config install. Prompt / --yes / no-TTY rules: SPEC.md, CLI.md.
+# DEFAULT_CONFIG=installr.toml
+
+# --- Extra PATH dependencies (optional) -------------------------------------
+
+# Space-separated commands that must exist on PATH before fetch.
+# Empty or omitted: no for-dep loop. curl (release) and git (repo) are still checked
+# inside the fetch fragment. Example: DEPS=make jq
+# DEPS=
+
+# --- GitHub release (active while SOURCE=github_release) --------------------
+
+# Download URL. Placeholders: {{name}} {{os}} {{arch}} {{version}} {{ext}} {{repo}}
+# OS: linux|darwin · arch: amd64|arm64. See SPEC.md.
+GH_ASSET_URL=https://github.com/jasenmichael/installr/releases/latest/download/{{name}}-{{os}}-{{arch}}.tar.gz
+
+# Substituted as {{repo}}. Often owner/name.
+GH_REPO=jasenmichael/installr
+
+# Substituted as {{version}}. Tag or latest. Default: latest.
+GH_VERSION=latest
+
+# Substituted as {{ext}}. Optional suffix used only in the URL pattern.
+# GH_EXT=
+
+# Archive kind: raw | tar.gz | zip. Default: inferred from the URL
+# (.tar.gz/.tgz → tar.gz, .zip → zip, else raw).
+# GH_ARCHIVE=tar.gz
+
+# Path inside a tar/zip after unpack. Default: {{name}}. Placeholders apply.
+# For raw downloads the file is the binary; this is unused.
+GH_BIN_PATH={{name}}
+
+# Per-platform path inside the archive. Only when that platform differs from GH_BIN_PATH.
+# Prefer {{os}}/{{arch}} in GH_BIN_PATH unless one layout is special.
+# GH_BIN_PATH_linux_amd64={{name}}
+# GH_BIN_PATH_linux_arm64={{name}}
+# GH_BIN_PATH_darwin_amd64={{name}}
+# GH_BIN_PATH_darwin_arm64=bin/{{name}}-apple
+
+# --- Repo (only when SOURCE=repo; leave commented for this release example) --
+
+# Git remote or local path. Required when SOURCE=repo.
+# REPO_URL=https://github.com/jasenmichael/installr.git
+
+# Branch or tag to clone. Default: main.
+# REPO_REF=main
+
+# Shell command run in the clone after fetch. Empty or omitted skips build.
+# BUILD=make release
+
+# Path to the binary inside the clone (or after BUILD). Prefer one pattern:
+#   BIN=bin/{{name}}
+#   BIN=dist/{{name}}-{{os}}-{{arch}}
+# Required when SOURCE=repo unless at least one BIN_<os>_<arch> is set. See SPEC.md.
+# BIN=bin/installr
+
+# Per-platform override. Wins over BIN for that OS/arch. You do not need all four.
+# Prefer BIN with {{os}}/{{arch}} unless one platform differs.
+# BIN_linux_amd64=dist/installr-linux-amd64
+# BIN_linux_arm64=dist/installr-linux-arm64
+# BIN_darwin_amd64=dist/installr-darwin-amd64
+# BIN_darwin_arm64=out/apple-silicon
