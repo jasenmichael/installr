@@ -257,3 +257,141 @@ EOF
   run --separate-stderr "$INSTALLR" --check --config "$REPO_ROOT/installr.conf.example"
   [ "$status" -eq 0 ]
 }
+
+@test "--help exits 0, lists config keys and README, writes nothing" {
+  run --separate-stderr "$INSTALLR" --help
+  [ "$status" -eq 0 ]
+  [ ! -e install.sh ]
+  [[ "$output" == *"APP_NAME"* ]]
+  [[ "$output" == *"SOURCE"* ]]
+  [[ "$output" == *"INSTALL_SCRIPT"* ]]
+  [[ "$output" == *"SCOPE"* ]]
+  [[ "$output" == *"LOCAL_PREFIX"* ]]
+  [[ "$output" == *"GLOBAL_PREFIX"* ]]
+  [[ "$output" == *"DEFAULT_CONFIG"* ]]
+  [[ "$output" == *"CONFIG_EXT"* ]]
+  [[ "$output" == *"CONFIG_PATH"* ]]
+  [[ "$output" == *"DEPS"* ]]
+  [[ "$output" == *"REPO_URL"* ]]
+  [[ "$output" == *"REPO_REF"* ]]
+  [[ "$output" == *"BUILD"* ]]
+  [[ "$output" == *"BIN"* ]]
+  [[ "$output" == *"BIN_linux_amd64"* ]]
+  [[ "$output" == *"BIN_linux_arm64"* ]]
+  [[ "$output" == *"BIN_darwin_amd64"* ]]
+  [[ "$output" == *"BIN_darwin_arm64"* ]]
+  [[ "$output" == *"GH_ASSET_URL"* ]]
+  [[ "$output" == *"GH_VERSION"* ]]
+  [[ "$output" == *"GH_EXT"* ]]
+  [[ "$output" == *"GH_REPO"* ]]
+  [[ "$output" == *"GH_ARCHIVE"* ]]
+  [[ "$output" == *"GH_BIN_PATH"* ]]
+  [[ "$output" == *"GH_BIN_PATH_linux_amd64"* ]]
+  [[ "$output" == *"GH_BIN_PATH_linux_arm64"* ]]
+  [[ "$output" == *"GH_BIN_PATH_darwin_amd64"* ]]
+  [[ "$output" == *"GH_BIN_PATH_darwin_arm64"* ]]
+  [[ "$output" == *"VERSION"* ]]
+  [[ "$output" == *"README.md"* || "$output" == *"github.com/jasenmichael/installr"* ]]
+}
+
+@test "-h does not require a config file" {
+  run --separate-stderr "$INSTALLR" -h
+  [ "$status" -eq 0 ]
+  [ ! -e install.sh ]
+}
+
+@test "--version prints installr 0.1.0" {
+  run --separate-stderr "$INSTALLR" --version
+  [ "$status" -eq 0 ]
+  [ "$output" = "installr 0.1.0" ]
+  [ ! -e install.sh ]
+}
+
+@test "-v prints installr 0.1.0 without config" {
+  run --separate-stderr "$INSTALLR" -v
+  [ "$status" -eq 0 ]
+  [ "$output" = "installr 0.1.0" ]
+}
+
+@test "VERSION literal bakes into install.sh --version" {
+  cat > installr.conf <<'EOF'
+APP_NAME=myapp
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/{{name}}
+VERSION=1.2.3
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 0 ]
+  run --separate-stderr ./install.sh --version
+  [ "$status" -eq 0 ]
+  [ "$output" = "myapp 1.2.3" ]
+  ! grep -q 'curl' <<<"$output"
+}
+
+@test "VERSION=!cat VERSION resolves at generate time" {
+  printf '9.9.9\n' > VERSION
+  cat > installr.conf <<'EOF'
+APP_NAME=myapp
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/{{name}}
+VERSION=!cat VERSION
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 0 ]
+  run --separate-stderr ./install.sh -v
+  [ "$status" -eq 0 ]
+  [ "$output" = "myapp 9.9.9" ]
+}
+
+@test "VERSION=!false exits 1 and names VERSION" {
+  cat > installr.conf <<'EOF'
+APP_NAME=myapp
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/x
+VERSION=!false
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"VERSION"* ]]
+  [ ! -e install.sh ]
+}
+
+@test "VERSION command with empty stdout exits 1 and names VERSION" {
+  cat > installr.conf <<'EOF'
+APP_NAME=myapp
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/x
+VERSION=!true
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"VERSION"* ]]
+}
+
+@test "no VERSION makes install.sh --version print unknown" {
+  cat > installr.conf <<'EOF'
+APP_NAME=myapp
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/{{name}}
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 0 ]
+  run --separate-stderr ./install.sh --version
+  [ "$status" -eq 0 ]
+  [ "$output" = "myapp unknown" ]
+}
+
+@test "{{version}} uses resolved VERSION over GH_VERSION" {
+  cat > installr.conf <<'EOF'
+APP_NAME=myapp
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/releases/download/{{version}}/{{name}}
+GH_VERSION=v0.0.1
+VERSION=2.0.0
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 0 ]
+  grep -F -q "GH_VERSION='2.0.0'" install.sh
+  ! grep -F -q "GH_VERSION='v0.0.1'" install.sh
+  grep -F -q 'releases/download/{{version}}' install.sh
+}

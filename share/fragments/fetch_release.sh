@@ -29,6 +29,9 @@ ASSET_URL=${ASSET_URL//\{\{repo\}\}/$GH_REPO}
 BIN_INSIDE=${BIN_INSIDE//\{\{name\}\}/$APP_NAME}
 BIN_INSIDE=${BIN_INSIDE//\{\{os\}\}/$OS}
 BIN_INSIDE=${BIN_INSIDE//\{\{arch\}\}/$ARCH}
+BIN_INSIDE=${BIN_INSIDE//\{\{version\}\}/$GH_VERSION}
+BIN_INSIDE=${BIN_INSIDE//\{\{ext\}\}/$GH_EXT}
+BIN_INSIDE=${BIN_INSIDE//\{\{repo\}\}/$GH_REPO}
 
 if [[ -z $GH_ARCHIVE ]]; then
   case $ASSET_URL in

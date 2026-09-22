@@ -121,7 +121,7 @@ EOF
   mkdir -p "$WORK/home"
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh"
   [ "$status" -eq 0 ]
-  local app="$WORK/home/.local/dummy"
+  local app="$WORK/home/.local/share/dummy"
   [ -f "$app/install.log" ]
   [ -x "$app/uninstall.sh" ]
   grep -F -q "APP_DIR=$app" "$app/install.log"
@@ -140,10 +140,10 @@ EOF
   [ "$status" -eq 0 ]
   [ -f "$WORK/home/.config/dummy.toml" ]
   grep -F -q 'name = "dummy"' "$WORK/home/.config/dummy.toml"
-  grep -F -q 'CONFIG_INSTALLED=yes' "$WORK/home/.local/dummy/install.log"
-  run --separate-stderr "$WORK/home/.local/dummy/uninstall.sh"
+  grep -F -q 'CONFIG_INSTALLED=yes' "$WORK/home/.local/share/dummy/install.log"
+  run --separate-stderr "$WORK/home/.local/share/dummy/uninstall.sh"
   [ "$status" -eq 0 ]
-  [ ! -e "$WORK/home/.local/dummy" ]
+  [ ! -e "$WORK/home/.local/share/dummy" ]
   [ ! -e "$WORK/home/.local/bin/dummy" ]
   [ ! -e "$WORK/home/.config/dummy.toml" ]
 }
@@ -158,11 +158,11 @@ EOF
   printf 'name = "keep"\n' > "$WORK/home/.config/dummy.toml"
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh"
   [ "$status" -eq 0 ]
-  grep -F -q 'CONFIG_INSTALLED=no' "$WORK/home/.local/dummy/install.log"
+  grep -F -q 'CONFIG_INSTALLED=no' "$WORK/home/.local/share/dummy/install.log"
   grep -F -q 'name = "keep"' "$WORK/home/.config/dummy.toml"
-  run --separate-stderr "$WORK/home/.local/dummy/uninstall.sh"
+  run --separate-stderr "$WORK/home/.local/share/dummy/uninstall.sh"
   [ "$status" -eq 0 ]
-  [ ! -e "$WORK/home/.local/dummy" ]
+  [ ! -e "$WORK/home/.local/share/dummy" ]
   [ ! -e "$WORK/home/.local/bin/dummy" ]
   grep -F -q 'name = "keep"' "$WORK/home/.config/dummy.toml"
 }
@@ -178,7 +178,7 @@ EOF
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh" --yes
   [ "$status" -eq 0 ]
   grep -F -q 'name = "dummy"' "$WORK/home/.config/dummy.toml"
-  grep -F -q 'CONFIG_INSTALLED=yes' "$WORK/home/.local/dummy/install.log"
+  grep -F -q 'CONFIG_INSTALLED=yes' "$WORK/home/.local/share/dummy/install.log"
 }
 
 @test "prompt answer n keeps an existing config" {
@@ -193,7 +193,7 @@ EOF
   run --separate-stderr prompt_install $'n\n'
   [ "$status" -eq 0 ]
   grep -F -q 'name = "keep"' "$WORK/home/.config/dummy.toml"
-  grep -F -q 'CONFIG_INSTALLED=no' "$WORK/home/.local/dummy/install.log"
+  grep -F -q 'CONFIG_INSTALLED=no' "$WORK/home/.local/share/dummy/install.log"
 }
 
 @test "prompt answer y replaces an existing config" {
@@ -208,7 +208,7 @@ EOF
   run --separate-stderr prompt_install $'y\n'
   [ "$status" -eq 0 ]
   grep -F -q 'name = "dummy"' "$WORK/home/.config/dummy.toml"
-  grep -F -q 'CONFIG_INSTALLED=yes' "$WORK/home/.local/dummy/install.log"
+  grep -F -q 'CONFIG_INSTALLED=yes' "$WORK/home/.local/share/dummy/install.log"
 }
 
 @test "no SCOPE defaults to local without sudo" {
@@ -227,7 +227,7 @@ EOF
   run --separate-stderr env HOME="$WORK/home" PATH="$WORK/bin:$PATH" SUDO_LOG="$WORK/sudo.log" "$WORK/install.sh"
   [ "$status" -eq 0 ]
   [ ! -s "$WORK/sudo.log" ]
-  grep -F -q 'SUDO=no' "$WORK/home/.local/dummy/install.log"
+  grep -F -q 'SUDO=no' "$WORK/home/.local/share/dummy/install.log"
   [ -x "$WORK/home/.local/bin/dummy" ]
 }
 
@@ -287,7 +287,7 @@ EOF
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh" --global
   [ "$status" -ne 0 ]
   [[ "$stderr" == *"SCOPE"* || "$stderr" == *"global"* ]]
-  [ ! -e "$WORK/home/.local/dummy" ]
+  [ ! -e "$WORK/home/.local/share/dummy" ]
   [ ! -e "$WORK/opt/dummy" ]
 }
 
@@ -301,7 +301,7 @@ EOF
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh" --local
   [ "$status" -ne 0 ]
   [[ "$stderr" == *"SCOPE"* || "$stderr" == *"local"* ]]
-  [ ! -e "$WORK/home/.local/dummy" ]
+  [ ! -e "$WORK/home/.local/share/dummy" ]
   [ ! -e "$WORK/opt/dummy" ]
 }
 
@@ -376,7 +376,7 @@ EOF
   run --separate-stderr env HOME="$WORK/home" PATH="$WORK/bin:$PATH" "$WORK/install.sh"
   [ "$status" -ne 0 ]
   [[ "$stderr" == *"unknown arch"* ]]
-  [ ! -e "$WORK/home/.local/dummy" ]
+  [ ! -e "$WORK/home/.local/share/dummy" ]
 }
 
 @test "uninstall refuses when APP_DIR does not match" {
@@ -387,9 +387,9 @@ EOF
   mkdir -p "$WORK/home"
   run --separate-stderr env HOME="$WORK/home" "$WORK/install.sh"
   [ "$status" -eq 0 ]
-  printf 'APP_DIR=/tmp/not-the-app\nAPP_NAME=dummy\nBIN=/tmp/not-the-app/dummy\nSYMLINK=/tmp/bin/dummy\nCONFIG=\nCONFIG_INSTALLED=no\nSUDO=no\n' > "$WORK/home/.local/dummy/install.log"
-  run --separate-stderr "$WORK/home/.local/dummy/uninstall.sh"
+  printf 'APP_DIR=/tmp/not-the-app\nAPP_NAME=dummy\nBIN=/tmp/not-the-app/dummy\nSYMLINK=/tmp/bin/dummy\nCONFIG=\nCONFIG_INSTALLED=no\nSUDO=no\n' > "$WORK/home/.local/share/dummy/install.log"
+  run --separate-stderr "$WORK/home/.local/share/dummy/uninstall.sh"
   [ "$status" -eq 1 ]
-  [ -d "$WORK/home/.local/dummy" ]
+  [ -d "$WORK/home/.local/share/dummy" ]
   [ -L "$WORK/home/.local/bin/dummy" ]
 }

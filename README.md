@@ -13,7 +13,7 @@ Two programs:
 
 ```
 author ──► installr + installr.conf ──► install.sh
-user   ──► install.sh ──► ~/.local/<app>/  +  ~/.local/bin/<app>
+user   ──► install.sh ──► ~/.local/share/<app>/  +  ~/.local/bin/<app>
                                       └── install.log
                                       └── uninstall.sh
 ```
@@ -74,12 +74,13 @@ Copy [installr.conf.example](installr.conf.example) (annotated catalog of every 
 | `SOURCE` | yes | — | `repo` or `github_release`. |
 | `INSTALL_SCRIPT` | no | `install.sh` | Path installr writes. |
 | `SCOPE` | no | (omit: user chooses; default local) | Optional lock: `local` or `global`. Omit so `--local` / `--global` choose. |
-| `LOCAL_PREFIX` | no | `$HOME/.local` | Local install root. |
+| `LOCAL_PREFIX` | no | `$HOME/.local` | Local root: app dir `$LOCAL_PREFIX/share/$APP_NAME`, symlink `$LOCAL_PREFIX/bin/$APP_NAME`. |
 | `GLOBAL_PREFIX` | no | `/usr/local` | Global install root. |
 | `CONFIG_EXT` | no | `toml` | Used when `CONFIG_PATH` is empty. |
 | `CONFIG_PATH` | no | `$HOME/.config/$APP_NAME.$CONFIG_EXT` | Destination for the default config. |
 | `DEFAULT_CONFIG` | no | empty | Path inside the fetched tree. Empty skips config install. |
 | `DEPS` | no | empty | Space-separated commands that must be on `PATH`. |
+| `VERSION` | no | empty | App version baked into `install.sh`. Literal (`1.4.2`) or command (`!cat VERSION`). Overrides `GH_VERSION` for `{{version}}` when set. |
 | `REPO_URL` | if `SOURCE=repo` | — | Git remote (or a local path for tests). |
 | `REPO_REF` | no | `main` | Branch or tag to clone. |
 | `BUILD` | no | empty | Shell command run in the clone after fetch. Empty skips build. |
@@ -87,7 +88,7 @@ Copy [installr.conf.example](installr.conf.example) (annotated catalog of every 
 | `BIN_linux_amd64` etc. | optional | — | Per-platform override. Wins over `BIN` for that OS/arch. |
 | `GH_ASSET_URL` | if `SOURCE=github_release` | — | Download URL pattern. |
 | `GH_REPO` | no | empty | Substituted as `{{repo}}`. |
-| `GH_VERSION` | no | `latest` | Substituted as `{{version}}`. |
+| `GH_VERSION` | no | `latest` | Substituted as `{{version}}` when `VERSION` is unset. |
 | `GH_EXT` | no | empty | Substituted as `{{ext}}`. |
 | `GH_ARCHIVE` | no | from URL suffix | `raw`, `tar.gz`, or `zip`. |
 | `GH_BIN_PATH` | no | `{{name}}` | Path inside a tar/zip archive. |
@@ -104,7 +105,7 @@ Use these in `BIN`, `GH_ASSET_URL`, and `GH_BIN_PATH` (and in the per-platform `
 | `{{name}}` | `APP_NAME` |
 | `{{os}}` | `linux` or `darwin` |
 | `{{arch}}` | `amd64` or `arm64` |
-| `{{version}}` | `GH_VERSION` |
+| `{{version}}` | Resolved `VERSION` if set, else `GH_VERSION` (default `latest`) |
 | `{{ext}}` | `GH_EXT` |
 | `{{repo}}` | `GH_REPO` |
 
@@ -201,28 +202,28 @@ GH_ASSET_URL=https://github.com/acme/myapp/releases/latest/download/{{name}}-{{o
 
 In order:
 
-1. Parse `--local`, `--global`, `--yes`. Enforce author `SCOPE` lock if set (forbidden flag → exit before fetch).
+1. Parse `-h` / `--help`, `-v` / `--version`, `--local`, `--global`, `--yes`. Help and version exit before fetch. Enforce author `SCOPE` lock if set (forbidden flag → exit before fetch).
 2. Detect OS (`linux` / `darwin`) and arch (`amd64` / `arm64`). Unknown → exit non-zero.
 3. If `DEPS` is set, require each command on `PATH`.
 4. Fetch:
    - **repo:** require `git`, clone `REPO_URL` at `REPO_REF`, run `BUILD` if set, resolve `BIN` / `BIN_*` for this platform.
    - **github_release:** require `curl`, expand `GH_ASSET_URL`, download, unpack if needed, resolve `GH_BIN_PATH` / `GH_BIN_PATH_*`.
 5. Choose prefix from the resolved scope (`--local` / `--global`, else lock, else local). Global and not root → use `sudo`, set `SUDO=yes` in the log.
-6. Copy the binary to `<prefix>/<APP_NAME>/<APP_NAME>`, symlink `<prefix>/bin/<APP_NAME>`.
+6. Copy the binary to the app dir (`$LOCAL_PREFIX/share/<APP_NAME>/` locally, `$GLOBAL_PREFIX/<APP_NAME>/` globally), symlink under `<prefix>/bin/<APP_NAME>`.
 7. If `DEFAULT_CONFIG` is set, copy it to `CONFIG_PATH` (prompt / `--yes` / no-TTY rules below).
 8. Write `install.log` and `uninstall.sh` into the app dir.
-9. If `<prefix>/bin` is not on `PATH`, print `export PATH="<prefix>/bin:$PATH"` and exit 0.
+9. If the bin directory is not on `PATH`, print `export PATH="<bin-dir>:$PATH"` and exit 0.
 
 ## Install layout
 
 Local (default):
 
 ```
-$HOME/.local/<APP_NAME>/<APP_NAME>     # binary
-$HOME/.local/<APP_NAME>/install.log
-$HOME/.local/<APP_NAME>/uninstall.sh
-$HOME/.local/bin/<APP_NAME>            # symlink
-$HOME/.config/<APP_NAME>.<ext>         # optional config
+$HOME/.local/share/<APP_NAME>/<APP_NAME>   # binary
+$HOME/.local/share/<APP_NAME>/install.log
+$HOME/.local/share/<APP_NAME>/uninstall.sh
+$HOME/.local/bin/<APP_NAME>                # symlink
+$HOME/.config/<APP_NAME>.<ext>             # optional config
 ```
 
 Global:
@@ -232,7 +233,7 @@ Global:
 /usr/local/bin/<APP_NAME>
 ```
 
-Override with `LOCAL_PREFIX`, `GLOBAL_PREFIX`, or `CONFIG_PATH`.
+Override with `LOCAL_PREFIX` (app → `$LOCAL_PREFIX/share/$APP_NAME`, bin → `$LOCAL_PREFIX/bin`), `GLOBAL_PREFIX`, or `CONFIG_PATH`.
 
 ## install.log
 
@@ -253,7 +254,7 @@ Written after a successful install. `KEY=value`, not sourced.
 Lives in the app dir. Paths come from `install.log`, not from `installr.conf`.
 
 ```bash
-~/.local/myapp/uninstall.sh
+~/.local/share/myapp/uninstall.sh
 ```
 
 Behavior:
@@ -273,15 +274,17 @@ Running the script is the confirmation. No second prompt. A reinstall overwrites
 
 | Flag / env | Role |
 | --- | --- |
+| `-h` / `--help` | Usage (config keys + docs links). No config required; writes nothing. |
+| `-v` / `--version` | Print `installr <version>` (repo `VERSION` or baked into `bin/installr`). |
 | `--config PATH` / `INSTALLR_CONFIG` | Config path (default `./installr.conf`). |
 | `--output PATH` / `INSTALLR_OUTPUT` | Output path (overrides `INSTALL_SCRIPT`). |
 | `--check` | Validate only; write nothing. |
 
-Precedence: flags > env > config file > defaults.
+Precedence: flags > env > config file > defaults. Help and version win before config load.
 
 | Exit | Meaning |
 | --- | --- |
-| 0 | Valid (and written, unless `--check`). |
+| 0 | Valid (and written, unless `--check` / help / version). |
 | 1 | Invalid config; stderr names the field. |
 | 2 | Usage error. |
 
@@ -289,6 +292,8 @@ Precedence: flags > env > config file > defaults.
 
 | Flag | Role |
 | --- | --- |
+| `-h` / `--help` | Short usage; exit before fetch. |
+| `-v` / `--version` | Print `<APP_NAME> <VERSION>` or `… unknown`; exit before fetch. |
 | `--local` | Force local prefix. |
 | `--global` | Force global prefix (sudo if not root). |
 | `--yes` | Replace existing config without prompting. |
@@ -360,8 +365,8 @@ BIN=bin/installr
 
 1. Set `REPO_URL` to the real remote (or a local clone path).
 2. `script/bundle.sh` so `bin/installr` exists, then `./src/installr.sh` (or `./bin/installr`).
-3. `./install.sh` — installs under `~/.local/installr` and symlinks `~/.local/bin/installr`.
-4. `~/.local/installr/uninstall.sh` removes that install.
+3. `./install.sh` — installs under `~/.local/share/installr` and symlinks `~/.local/bin/installr`.
+4. `~/.local/share/installr/uninstall.sh` removes that install.
 
 Because `BIN=bin/installr` is the same relative path on every platform, one line replaces four `BIN_*` keys.
 
@@ -380,5 +385,5 @@ cp installr.conf.example installr.conf
 
 # 4. Run and uninstall
 ~/.local/bin/<APP_NAME>
-~/.local/<APP_NAME>/uninstall.sh
+~/.local/share/<APP_NAME>/uninstall.sh
 ```

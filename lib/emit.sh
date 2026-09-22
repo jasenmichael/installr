@@ -25,9 +25,15 @@ render_fragment() {
   else
     text=$(< "$INSTALLR_ROOT/share/fragments/${name}.sh")
   fi
+  local gh_version=${CONF[GH_VERSION]:-latest}
+  if [[ -n $APP_VERSION_RESOLVED ]]; then
+    gh_version=$APP_VERSION_RESOLVED
+  fi
+  local app_version=${APP_VERSION_RESOLVED:-unknown}
   text=$(replace_token "$text" __Q_APP_NAME__ "$(q "${CONF[APP_NAME]}")")
+  text=$(replace_token "$text" __Q_APP_VERSION__ "$(q "$app_version")")
   text=$(replace_token "$text" __Q_GH_ASSET_URL__ "$(q "${CONF[GH_ASSET_URL]:-}")")
-  text=$(replace_token "$text" __Q_GH_VERSION__ "$(q "${CONF[GH_VERSION]:-latest}")")
+  text=$(replace_token "$text" __Q_GH_VERSION__ "$(q "$gh_version")")
   text=$(replace_token "$text" __Q_GH_EXT__ "$(q "${CONF[GH_EXT]:-}")")
   text=$(replace_token "$text" __Q_GH_REPO__ "$(q "${CONF[GH_REPO]:-}")")
   text=$(replace_token "$text" __Q_GH_ARCHIVE__ "$(q "${CONF[GH_ARCHIVE]:-}")")

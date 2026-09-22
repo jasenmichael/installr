@@ -6,11 +6,36 @@ config_key_known() {
   case "$1" in
     APP_NAME | SOURCE | GH_ASSET_URL | INSTALL_SCRIPT | REPO_URL | REPO_REF | BUILD | DEPS | BIN | \
       SCOPE | LOCAL_PREFIX | GLOBAL_PREFIX | DEFAULT_CONFIG | CONFIG_EXT | CONFIG_PATH | \
-      GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | \
+      VERSION | GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | \
       GH_BIN_PATH_linux_amd64 | GH_BIN_PATH_linux_arm64 | GH_BIN_PATH_darwin_amd64 | GH_BIN_PATH_darwin_arm64 | \
       BIN_linux_amd64 | BIN_linux_arm64 | BIN_darwin_amd64 | BIN_darwin_arm64) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Resolve CONF[VERSION] into APP_VERSION_RESOLVED (literal or !command).
+# Empty VERSION leaves APP_VERSION_RESOLVED empty (install.sh --version → unknown).
+declare -g APP_VERSION_RESOLVED=""
+
+resolve_version() {
+  local raw=${CONF[VERSION]:-} out
+  APP_VERSION_RESOLVED=""
+  [[ -z $raw ]] && return 0
+  if [[ $raw == !* ]]; then
+    if ! out=$(bash -lc "${raw#!}"); then
+      printf 'installr: VERSION command failed\n' >&2
+      exit 1
+    fi
+  else
+    out=$raw
+  fi
+  out=${out#"${out%%[![:space:]]*}"}
+  out=${out%"${out##*[![:space:]]}"}
+  if [[ -z $out ]]; then
+    printf 'installr: VERSION produced empty output\n' >&2
+    exit 1
+  fi
+  APP_VERSION_RESOLVED=$out
 }
 
 load_config() {

@@ -30,9 +30,13 @@ INSTALL_SCRIPT=install.sh
 # SCOPE=local
 
 # Local install root. Default: $HOME/.local (baked as ${HOME}/.local).
+# App dir: $LOCAL_PREFIX/share/$APP_NAME  (default ~/.local/share/$APP_NAME)
+# Symlink: $LOCAL_PREFIX/bin/$APP_NAME    (default ~/.local/bin/$APP_NAME)
 # LOCAL_PREFIX=$HOME/.local
 
 # Global install root. Default: /usr/local.
+# App dir: $GLOBAL_PREFIX/$APP_NAME  ·  symlink: $GLOBAL_PREFIX/bin/$APP_NAME
+# (no share/ segment for global)
 # GLOBAL_PREFIX=/usr/local
 
 # --- App config file (optional) ---------------------------------------------
@@ -54,6 +58,15 @@ CONFIG_EXT=toml
 # inside the fetch fragment. Example: DEPS=make jq
 # DEPS=
 
+# --- Version (optional) -----------------------------------------------------
+
+# Baked into install.sh for -v/--version and as {{version}} (overrides GH_VERSION).
+# Literal (no leading !). See README.md.
+# VERSION=0.1.0
+#
+# Or run a command at generate time (! prefix → bash -lc; trim stdout):
+# VERSION=!cat VERSION
+
 # --- GitHub release (active while SOURCE=github_release) --------------------
 
 # Download URL. Placeholders: {{name}} {{os}} {{arch}} {{version}} {{ext}} {{repo}}
@@ -63,7 +76,7 @@ GH_ASSET_URL=https://github.com/jasenmichael/installr/releases/latest/download/{
 # Substituted as {{repo}}. Often owner/name.
 GH_REPO=jasenmichael/installr
 
-# Substituted as {{version}}. Tag or latest. Default: latest.
+# Substituted as {{version}} when VERSION is unset. Tag or latest. Default: latest.
 GH_VERSION=latest
 
 # Substituted as {{ext}}. Optional suffix used only in the URL pattern.

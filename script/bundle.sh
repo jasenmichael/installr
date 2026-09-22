@@ -4,8 +4,17 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 mkdir -p "$ROOT/bin"
 
+INSTALLR_VERSION=unknown
+if [[ -f $ROOT/VERSION ]]; then
+  INSTALLR_VERSION=$(< "$ROOT/VERSION")
+  INSTALLR_VERSION=${INSTALLR_VERSION#"${INSTALLR_VERSION%%[![:space:]]*}"}
+  INSTALLR_VERSION=${INSTALLR_VERSION%"${INSTALLR_VERSION##*[![:space:]]}"}
+  [[ -n $INSTALLR_VERSION ]] || INSTALLR_VERSION=unknown
+fi
+
 {
   printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'INSTALLR_EMBEDDED=1'
+  printf "INSTALLR_VERSION=%q\n" "$INSTALLR_VERSION"
   local_name=""
   for fragment in "$ROOT"/share/fragments/*.sh; do
     local_name=$(basename "$fragment" .sh)

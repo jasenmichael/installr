@@ -39,3 +39,11 @@ EOF
   run --separate-stderr "$REPO_ROOT/src/installr.sh" --check --config "$REPO_ROOT/installr.conf"
   [ "$status" -eq 0 ]
 }
+
+@test "bundled bin/installr --version prints baked 0.1.0" {
+  run --separate-stderr "$REPO_ROOT/script/bundle.sh"
+  [ "$status" -eq 0 ]
+  run --separate-stderr bash -c 'cat "$1" | bash -s -- --version' bash "$REPO_ROOT/bin/installr"
+  [ "$status" -eq 0 ]
+  [ "$output" = "installr 0.1.0" ]
+}

@@ -20,7 +20,7 @@ These tokens may appear in `BIN`, `GH_ASSET_URL`, and `GH_BIN_PATH` (and in `GH_
 | `{{name}}` | `APP_NAME` |
 | `{{os}}` | `linux` or `darwin` |
 | `{{arch}}` | `amd64` or `arm64` |
-| `{{version}}` | `GH_VERSION` (release only) |
+| `{{version}}` | Resolved `VERSION` when set; else `GH_VERSION` (default `latest`; release only) |
 | `{{ext}}` | `GH_EXT` (release only) |
 | `{{repo}}` | `GH_REPO` (release only) |
 
@@ -38,6 +38,17 @@ GH_BIN_PATH={{name}}
 ```
 
 `GH_VERSION` defaults to `latest`. `GH_EXT` and `GH_REPO` default to empty. `GH_BIN_PATH` is the path inside an archive and defaults to `{{name}}`. It accepts the same placeholders. `GH_ARCHIVE` is `raw`, `tar.gz`, or `zip`. When empty, a URL ending in `.tar.gz` or `.tgz` is `tar.gz`, a URL ending in `.zip` is `zip`, and anything else is `raw`.
+
+## VERSION
+
+`VERSION` is optional. installr resolves it at generate time and bakes the result into `install.sh`.
+
+- Literal: `VERSION=1.4.2` (no leading `!`). Baked as that string.
+- Command: `VERSION=!cat VERSION` or `VERSION=!cat path/to/VERSION`. The `!` prefix means run the rest via `bash -lc` in the cwd. installr trims whitespace from stdout. Non-zero exit or empty stdout → exit 1 and stderr names `VERSION`. Unprefixed values are never `eval`'d. The config is never sourced.
+
+When `VERSION` is set, the resolved value overrides `GH_VERSION` for the `{{version}}` placeholder in `GH_ASSET_URL` and `GH_BIN_PATH`. When only `GH_VERSION` is set, that value is used (default `latest` when neither is set).
+
+Generated `install.sh` accepts `-v` / `--version` and prints `<APP_NAME> <resolved>` (or `<APP_NAME> unknown` when `VERSION` was omitted), then exits 0 before fetch. `-h` / `--help` prints short usage (including `--local`, `--global`, `--yes`, and scope lock behavior) and exits 0 before fetch.
 
 When one platform’s archive layout differs, set that platform only:
 
@@ -96,7 +107,7 @@ BIN=dist/{{name}}
 
 ## Install layout
 
-`SCOPE` is an optional author lock: `local` or `global`. Invalid values make installr exit 1 and name `SCOPE` on stderr. When omitted, `install.sh` defaults to local and the user may pass `--local` or `--global`. When `SCOPE=local`, `--global` exits non-zero and installs nothing. When `SCOPE=global`, a run with no flag installs global, and `--local` exits non-zero and installs nothing. Local prefix defaults to `$HOME/.local`. Global prefix defaults to `/usr/local`. A global install uses `sudo` when the user is not root, and the log records `SUDO=yes`. `uninstall.sh` uses `sudo` for removes when `SUDO=yes`. The binary is copied to `<prefix>/<APP_NAME>/<APP_NAME>`. A symlink is created at `<prefix>/bin/<APP_NAME>`. If that `bin` directory is not on `PATH`, `install.sh` prints `export PATH="<bin-dir>:$PATH"` and still exits 0.
+`SCOPE` is an optional author lock: `local` or `global`. Invalid values make installr exit 1 and name `SCOPE` on stderr. When omitted, `install.sh` defaults to local and the user may pass `--local` or `--global`. When `SCOPE=local`, `--global` exits non-zero and installs nothing. When `SCOPE=global`, a run with no flag installs global, and `--local` exits non-zero and installs nothing. Local prefix defaults to `$HOME/.local`. Global prefix defaults to `/usr/local`. A global install uses `sudo` when the user is not root, and the log records `SUDO=yes`. `uninstall.sh` uses `sudo` for removes when `SUDO=yes`. A local install copies the binary to `$LOCAL_PREFIX/share/<APP_NAME>/<APP_NAME>` (default `$HOME/.local/share/<APP_NAME>/<APP_NAME>`) and creates a symlink at `$LOCAL_PREFIX/bin/<APP_NAME>` (default `$HOME/.local/bin/<APP_NAME>`). A global install copies to `$GLOBAL_PREFIX/<APP_NAME>/<APP_NAME>` and symlinks `$GLOBAL_PREFIX/bin/<APP_NAME>` with no `share/` segment. If that `bin` directory is not on `PATH`, `install.sh` prints `export PATH="<bin-dir>:$PATH"` and still exits 0.
 
 `INSTALL_SCRIPT` defaults to `install.sh`. `CONFIG_EXT` defaults to `toml`. `CONFIG_PATH` defaults to `$HOME/.config/$APP_NAME.$CONFIG_EXT`. `DEFAULT_CONFIG` is a path inside the fetched tree; empty skips config install.
 

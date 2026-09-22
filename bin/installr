@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 INSTALLR_EMBEDDED=1
+INSTALLR_VERSION=0.1.0
 FRAGMENT_build=$(cat <<'INSTALLR_FRAGMENT_END'
 ( cd "$STAGE" && bash -lc __Q_BUILD__ )
 
@@ -48,6 +49,9 @@ ASSET_URL=${ASSET_URL//\{\{repo\}\}/$GH_REPO}
 BIN_INSIDE=${BIN_INSIDE//\{\{name\}\}/$APP_NAME}
 BIN_INSIDE=${BIN_INSIDE//\{\{os\}\}/$OS}
 BIN_INSIDE=${BIN_INSIDE//\{\{arch\}\}/$ARCH}
+BIN_INSIDE=${BIN_INSIDE//\{\{version\}\}/$GH_VERSION}
+BIN_INSIDE=${BIN_INSIDE//\{\{ext\}\}/$GH_EXT}
+BIN_INSIDE=${BIN_INSIDE//\{\{repo\}\}/$GH_REPO}
 
 if [[ -z $GH_ARCHIVE ]]; then
   case $ASSET_URL in
@@ -125,6 +129,7 @@ FRAGMENT_header=$(cat <<'INSTALLR_FRAGMENT_END'
 set -euo pipefail
 
 APP_NAME=__Q_APP_NAME__
+APP_VERSION=__Q_APP_VERSION__
 SCOPE_LOCK=__Q_SCOPE_LOCK__
 if [[ -n $SCOPE_LOCK ]]; then
   SCOPE=$SCOPE_LOCK
@@ -134,6 +139,29 @@ fi
 ASSUME_YES=no
 while [[ $# -gt 0 ]]; do
   case $1 in
+    -h | --help)
+      cat <<EOF
+$APP_NAME installer.
+
+Usage: install.sh [options]
+
+Options:
+  -h, --help     Show this help and exit (before fetch).
+  -v, --version  Print "$APP_NAME <version>" and exit (before fetch).
+  --local        Install under the local prefix.
+  --global       Install under the global prefix (sudo if not root).
+  --yes          Replace an existing app config without prompting.
+
+Scope lock: when the author set SCOPE=local, --global fails.
+When SCOPE=global, --local fails. When SCOPE is omitted, default is local
+and both --local and --global are allowed.
+EOF
+      exit 0
+      ;;
+    -v | --version)
+      printf '%s %s\n' "$APP_NAME" "$APP_VERSION"
+      exit 0
+      ;;
     --local)
       if [[ $SCOPE_LOCK == global ]]; then
         printf 'install.sh: SCOPE is global; --local is not allowed\n' >&2
@@ -166,12 +194,13 @@ GLOBAL_PREFIX=__GLOBAL_PREFIX__
 
 if [[ $SCOPE == global ]]; then
   PREFIX=$GLOBAL_PREFIX
+  APP_DIR=$PREFIX/$APP_NAME
+  BIN_DIR=$PREFIX/bin
 else
   PREFIX=$LOCAL_PREFIX
+  APP_DIR=$PREFIX/share/$APP_NAME
+  BIN_DIR=$PREFIX/bin
 fi
-
-APP_DIR=$PREFIX/$APP_NAME
-BIN_DIR=$PREFIX/bin
 USED_SUDO=no
 if [[ $SCOPE == global && $(id -u) -ne 0 ]]; then
   USED_SUDO=yes
@@ -337,11 +366,36 @@ config_key_known() {
   case "$1" in
     APP_NAME | SOURCE | GH_ASSET_URL | INSTALL_SCRIPT | REPO_URL | REPO_REF | BUILD | DEPS | BIN | \
       SCOPE | LOCAL_PREFIX | GLOBAL_PREFIX | DEFAULT_CONFIG | CONFIG_EXT | CONFIG_PATH | \
-      GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | \
+      VERSION | GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | \
       GH_BIN_PATH_linux_amd64 | GH_BIN_PATH_linux_arm64 | GH_BIN_PATH_darwin_amd64 | GH_BIN_PATH_darwin_arm64 | \
       BIN_linux_amd64 | BIN_linux_arm64 | BIN_darwin_amd64 | BIN_darwin_arm64) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Resolve CONF[VERSION] into APP_VERSION_RESOLVED (literal or !command).
+# Empty VERSION leaves APP_VERSION_RESOLVED empty (install.sh --version → unknown).
+declare -g APP_VERSION_RESOLVED=""
+
+resolve_version() {
+  local raw=${CONF[VERSION]:-} out
+  APP_VERSION_RESOLVED=""
+  [[ -z $raw ]] && return 0
+  if [[ $raw == !* ]]; then
+    if ! out=$(bash -lc "${raw#!}"); then
+      printf 'installr: VERSION command failed\n' >&2
+      exit 1
+    fi
+  else
+    out=$raw
+  fi
+  out=${out#"${out%%[![:space:]]*}"}
+  out=${out%"${out##*[![:space:]]}"}
+  if [[ -z $out ]]; then
+    printf 'installr: VERSION produced empty output\n' >&2
+    exit 1
+  fi
+  APP_VERSION_RESOLVED=$out
 }
 
 load_config() {
@@ -441,9 +495,15 @@ render_fragment() {
   else
     text=$(< "$INSTALLR_ROOT/share/fragments/${name}.sh")
   fi
+  local gh_version=${CONF[GH_VERSION]:-latest}
+  if [[ -n $APP_VERSION_RESOLVED ]]; then
+    gh_version=$APP_VERSION_RESOLVED
+  fi
+  local app_version=${APP_VERSION_RESOLVED:-unknown}
   text=$(replace_token "$text" __Q_APP_NAME__ "$(q "${CONF[APP_NAME]}")")
+  text=$(replace_token "$text" __Q_APP_VERSION__ "$(q "$app_version")")
   text=$(replace_token "$text" __Q_GH_ASSET_URL__ "$(q "${CONF[GH_ASSET_URL]:-}")")
-  text=$(replace_token "$text" __Q_GH_VERSION__ "$(q "${CONF[GH_VERSION]:-latest}")")
+  text=$(replace_token "$text" __Q_GH_VERSION__ "$(q "$gh_version")")
   text=$(replace_token "$text" __Q_GH_EXT__ "$(q "${CONF[GH_EXT]:-}")")
   text=$(replace_token "$text" __Q_GH_REPO__ "$(q "${CONF[GH_REPO]:-}")")
   text=$(replace_token "$text" __Q_GH_ARCHIVE__ "$(q "${CONF[GH_ARCHIVE]:-}")")
@@ -513,12 +573,116 @@ emit_install_sh() {
   } > "$out"
   chmod +x "$out"
 }
+print_help() {
+  cat <<'EOF'
+installr — turn installr.conf into an install.sh for your CLI app.
+
+Usage: installr [options]
+
+Options:
+  -h, --help           Show this help and exit (no config required).
+  -v, --version        Print installr's version and exit (no config required).
+  --config PATH        Config file (default: ./installr.conf).
+  --output PATH        Path to write install.sh.
+  --check              Validate config only; write nothing.
+
+Environment:
+  INSTALLR_CONFIG      Default config path (overridden by --config).
+  INSTALLR_OUTPUT      Default output path (overridden by --output).
+
+Exit codes:
+  0  Success (help, version, --check, or install.sh written).
+  1  Invalid config (stderr names the field).
+  2  Usage error (unknown flag or missing flag argument).
+
+Config keys (installr.conf; KEY=value; not sourced):
+
+  App
+    APP_NAME           required — installed command and app dir name.
+    SOURCE             required — repo | github_release.
+
+  Output
+    INSTALL_SCRIPT     optional, default install.sh — path installr writes.
+
+  Scope lock
+    SCOPE              optional, omit = user chooses (default local) —
+                       author lock: local rejects --global; global rejects --local.
+
+  Prefixes
+    LOCAL_PREFIX       optional, default $HOME/.local — local root;
+                       app $LOCAL_PREFIX/share/$APP_NAME, bin $LOCAL_PREFIX/bin.
+    GLOBAL_PREFIX      optional, default /usr/local — global root;
+                       app $GLOBAL_PREFIX/$APP_NAME, bin $GLOBAL_PREFIX/bin.
+
+  App config
+    CONFIG_EXT         optional, default toml — used when CONFIG_PATH empty.
+    CONFIG_PATH        optional, default $HOME/.config/$APP_NAME.$CONFIG_EXT —
+                       destination for default config.
+    DEFAULT_CONFIG     optional, empty — path inside fetched tree; empty skips copy.
+
+  Deps
+    DEPS               optional, empty — space-separated PATH commands to require.
+
+  Repo source (SOURCE=repo)
+    REPO_URL           required for repo — git remote or local path.
+    REPO_REF           optional, default main — branch or tag.
+    BUILD              optional, empty — shell command in clone after fetch.
+    BIN                required for repo unless BIN_* set — binary path pattern.
+    BIN_linux_amd64, BIN_linux_arm64, BIN_darwin_amd64, BIN_darwin_arm64
+                       optional — per-platform override; wins over BIN.
+
+  GitHub release (SOURCE=github_release)
+    GH_ASSET_URL       required for release — download URL pattern.
+    GH_REPO            optional, empty — substituted as {{repo}}.
+    GH_VERSION         optional, default latest — substituted as {{version}}
+                       when VERSION is unset.
+    GH_EXT             optional, empty — substituted as {{ext}}.
+    GH_ARCHIVE         optional, from URL — raw | tar.gz | zip.
+    GH_BIN_PATH        optional, default {{name}} — path inside archive.
+    GH_BIN_PATH_linux_amd64, GH_BIN_PATH_linux_arm64,
+    GH_BIN_PATH_darwin_amd64, GH_BIN_PATH_darwin_arm64
+                       optional — per-platform archive path override.
+
+  Version
+    VERSION            optional — app version baked into install.sh.
+                       Literal: VERSION=1.4.2 (no leading !).
+                       Command: VERSION=!cat VERSION — run via bash -lc at
+                       generate time; trim stdout; non-zero or empty → exit 1.
+                       When set, resolved value overrides GH_VERSION for
+                       {{version}}. install.sh -v prints APP_NAME <resolved>
+                       (or APP_NAME unknown if VERSION omitted).
+
+Placeholders (BIN, GH_ASSET_URL, GH_BIN_PATH, GH_BIN_PATH_*):
+  {{name}} {{os}} {{arch}} {{version}} {{ext}} {{repo}}
+
+Docs: README.md · https://github.com/jasenmichael/installr#readme
+EOF
+}
+
+print_version() {
+  local ver=${INSTALLR_VERSION:-}
+  if [[ -z $ver && -n ${INSTALLR_ROOT:-} && -f $INSTALLR_ROOT/VERSION ]]; then
+    ver=$(< "$INSTALLR_ROOT/VERSION")
+    ver=${ver#"${ver%%[![:space:]]*}"}
+    ver=${ver%"${ver##*[![:space:]]}"}
+  fi
+  printf 'installr %s\n' "${ver:-unknown}"
+}
+
 main() {
   local config=${INSTALLR_CONFIG:-./installr.conf}
   local output=${INSTALLR_OUTPUT:-}
   local check=0
   while [[ $# -gt 0 ]]; do
     case $1 in
+      -h | --help)
+        print_help
+        exit 0
+        ;;
+      -v | --version)
+        print_version
+        exit 0
+        ;;
       --check)
         check=1
         shift
@@ -547,6 +711,7 @@ main() {
   done
   load_config "$config"
   validate_config
+  resolve_version
   if [[ $check == 1 ]]; then
     exit 0
   fi
