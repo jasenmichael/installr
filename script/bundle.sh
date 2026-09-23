@@ -13,7 +13,14 @@ if [[ -f $ROOT/VERSION ]]; then
 fi
 
 {
-  printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'INSTALLR_EMBEDDED=1'
+  # Emit project header into bin/installr (same short # style as share/fragments/header.sh).
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    '# installr - reads installr.conf, validates it, writes install.sh for a CLI app.' \
+    '# https://github.com/jasenmichael/installr' \
+    '# Curl one-file: https://github.com/jasenmichael/installr/raw/main/bin/installr' \
+    'set -euo pipefail' \
+    'INSTALLR_EMBEDDED=1'
   printf "INSTALLR_VERSION=%q\n" "$INSTALLR_VERSION"
   local_name=""
   for fragment in "$ROOT"/share/fragments/*.sh; do

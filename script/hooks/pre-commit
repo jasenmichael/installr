@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Block the commit when tests fail. Artifact commits happen in post-commit.
+set -euo pipefail
+
+if [[ -n ${INSTALLR_HOOK_INNER:-} ]]; then
+  exit 0
+fi
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if command -v bats >/dev/null 2>&1; then
+  bats_bin=$(command -v bats)
+elif [[ -x /tmp/bats-core/bin/bats ]]; then
+  bats_bin=/tmp/bats-core/bin/bats
+else
+  printf 'pre-commit: need bats on PATH or /tmp/bats-core/bin/bats\n' >&2
+  exit 1
+fi
+
+printf 'pre-commit: bats spec\n'
+"$bats_bin" spec

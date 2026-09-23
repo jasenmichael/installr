@@ -28,6 +28,19 @@ script/bundle.sh
 
 Result: executable `bin/installr` (libs and fragments pasted in; no `source` of `lib/` or `share/`). That file is the curl target and what dogfood installs via `BIN=bin/installr`.
 
+`git commit` runs [script/hooks/pre-commit](script/hooks/pre-commit) (`bats spec`). After that commit lands, [script/hooks/post-commit](script/hooks/post-commit) rebuilds `bin/installr` and runs it to refresh root `install.sh` from [installr.conf](installr.conf). Each file is committed on its own, and only when it changed:
+
+```
+build: refresh bundled installr
+chore: refresh generated install.sh
+```
+
+Enable the hooks once per clone:
+
+```bash
+script/install-hooks.sh
+```
+
 ## Checkout vs curl one-file build
 
 ### From a git checkout

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# After the user's commit: rebuild bin/installr and refresh install.sh.
+# Each artifact gets its own commit, and only when that file changed.
+set -euo pipefail
+
+if [[ -n ${INSTALLR_HOOK_INNER:-} ]]; then
+  exit 0
+fi
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+changed() {
+  local path=$1
+  [[ -e $path ]] || return 1
+  if ! git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+    return 0
+  fi
+  ! git diff --quiet HEAD -- "$path"
+}
+
+commit_if_changed() {
+  local path=$1 message=$2
+  if ! changed "$path"; then
+    printf 'post-commit: skip %s (unchanged)\n' "$path"
+    return 0
+  fi
+  printf 'post-commit: git commit %s\n' "$path"
+  git add -- "$path"
+  INSTALLR_HOOK_INNER=1 git commit -m "$message"
+}
+
+printf 'post-commit: script/bundle.sh\n'
+script/bundle.sh
+commit_if_changed bin/installr "build: refresh bundled installr"
+
+printf 'post-commit: bin/installr\n'
+bin/installr
+commit_if_changed install.sh "chore: refresh generated install.sh"

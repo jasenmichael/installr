@@ -28,6 +28,8 @@ script/bundle.sh
 
 That writes executable `bin/installr` (libs and fragments inlined; no `source` of `lib/` or `share/`). Publish `bin/installr`. The curl URL is that file:
 
+A checkout can install [script/hooks/pre-commit](script/hooks/pre-commit) and [script/hooks/post-commit](script/hooks/post-commit) with `script/install-hooks.sh`. `pre-commit` runs `bats spec` and blocks the commit on failure. `post-commit` rebuilds `bin/installr`, runs it to refresh root `install.sh`, and makes a separate commit for each file only when that file changed (`build: refresh bundled installr`, then `chore: refresh generated install.sh`).
+
 ```bash
 curl -fsSL https://github.com/jasenmichael/installr/raw/main/bin/installr | bash -s --
 ```

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# installr - reads installr.conf, validates it, writes install.sh for a CLI app.
+# https://github.com/jasenmichael/installr
+# Curl one-file: https://github.com/jasenmichael/installr/raw/main/bin/installr
 set -euo pipefail
 INSTALLR_EMBEDDED=1
 INSTALLR_VERSION=0.1.0
