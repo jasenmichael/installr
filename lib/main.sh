@@ -43,7 +43,21 @@ Config keys (installr.conf; KEY=value; not sourced):
     CONFIG_EXT         optional, default toml — used when CONFIG_PATH empty.
     CONFIG_PATH        optional, default $HOME/.config/$APP_NAME.$CONFIG_EXT —
                        destination for default config.
-    DEFAULT_CONFIG     optional, empty — path inside fetched tree; empty skips copy.
+    DEFAULT_CONFIG     optional, empty — omit writes no settings file.
+                       Path inside the fetched tree, or a command:
+                       DEFAULT_CONFIG=!cat path/to/app.toml
+                       ! runs via bash -lc at generate time; trim stdout;
+                       non-zero or empty → exit 1. No ! means a path, never run.
+                       Same replace prompt and --yes rules either way.
+
+  App dir payload
+    FILES              optional, empty — omit = binary only (files: binary).
+                       FILES=* puts the fetched tree in the app dir
+                       (git clone includes .git; archive unpacks; raw asset errors).
+                       Or a comma-separated list copied beside the binary.
+                       Quote the whole value: FILES="lib/, data/*".
+                       Globs expand at install time and keep repo paths.
+                       * mixed with other items, absolute paths, and .. fail.
 
   Deps
     DEPS               optional, empty — space-separated PATH commands to require.
@@ -137,6 +151,7 @@ main() {
   load_config "$config"
   validate_config
   resolve_version
+  resolve_default_config
   if [[ $check == 1 ]]; then
     exit 0
   fi

@@ -78,7 +78,8 @@ Copy [installr.conf.example](installr.conf.example) (annotated catalog of every 
 | `GLOBAL_PREFIX` | no | `/usr/local` | Global install root. |
 | `CONFIG_EXT` | no | `toml` | Used when `CONFIG_PATH` is empty. |
 | `CONFIG_PATH` | no | `$HOME/.config/$APP_NAME.$CONFIG_EXT` | Destination for the default config. |
-| `DEFAULT_CONFIG` | no | empty | Path inside the fetched tree. Empty skips config install. |
+| `DEFAULT_CONFIG` | no | empty | Omit: `install.sh` writes no settings file. Path inside the fetched tree, or `!command` whose stdout is baked at generate time. |
+| `FILES` | no | empty | Omit: binary only. `*` keeps the whole tree in the app dir. A comma-separated list copies those paths beside the binary. |
 | `DEPS` | no | empty | Space-separated commands that must be on `PATH`. |
 | `VERSION` | no | empty | App version baked into `install.sh`. Literal (`1.4.2`) or command (`!cat VERSION`). Overrides `GH_VERSION` for `{{version}}` when set. |
 | `REPO_URL` | if `SOURCE=repo` | — | Git remote (or a local path for tests). |
@@ -207,12 +208,12 @@ In order:
 3. If `DEPS` is set, require each command on `PATH`.
 4. Fetch:
    - **repo:** require `git`, clone `REPO_URL` at `REPO_REF`, run `BUILD` if set, resolve `BIN` / `BIN_*` for this platform.
-   - **github_release:** require `curl`, expand `GH_ASSET_URL`, download, unpack if needed, resolve `GH_BIN_PATH` / `GH_BIN_PATH_*`.
+   - **github_release:** require `curl` or `wget` (curl preferred; missing both is an error), expand `GH_ASSET_URL`, download, unpack if needed, resolve `GH_BIN_PATH` / `GH_BIN_PATH_*`.
 5. Choose prefix from the resolved scope (`--local` / `--global`, else lock, else local). Global and not root → use `sudo`, set `SUDO=yes` in the log.
-6. Copy the binary to the app dir (`$LOCAL_PREFIX/share/<APP_NAME>/` locally, `$GLOBAL_PREFIX/<APP_NAME>/` globally), symlink under `<prefix>/bin/<APP_NAME>`.
-7. If `DEFAULT_CONFIG` is set, copy it to `CONFIG_PATH` (prompt / `--yes` / no-TTY rules below).
+6. Copy the binary to the app dir (`$LOCAL_PREFIX/share/<APP_NAME>/` locally, `$GLOBAL_PREFIX/<APP_NAME>/` globally), symlink under `<prefix>/bin/<APP_NAME>`. `FILES=*` instead puts the whole tree in the app dir and points the symlink at the binary inside it. A `FILES` list copies those extra paths beside the binary.
+7. If `DEFAULT_CONFIG` is set, copy that path or write the baked command output to `CONFIG_PATH` (prompt / `--yes` rules below). Omitted: no settings file.
 8. Write `install.log` and `uninstall.sh` into the app dir.
-9. Print a short install summary on stdout (version if `VERSION` was set, app dir, symlink, config action, scope; mention sudo when used). Help and version exit before this.
+9. Print a short install summary on stdout (version if `VERSION` was set, app dir, symlink, `files:` line, config action, scope; mention sudo when used). Help and version exit before this.
 10. If the bin directory is not on `PATH`, print `export PATH="<bin-dir>:$PATH"` and exit 0.
 
 ## Install layout
@@ -308,7 +309,7 @@ Full detail: [CLI.md](CLI.md).
 ## Dependencies
 
 - `DEPS` in the config: optional list checked with a `for dep in …` loop.
-- Implied: `curl` for GitHub releases, `git` for repo clones (checked inside the fetch fragment, not via the `DEPS` loop).
+- Implied: `curl` or `wget` for GitHub releases (curl preferred; missing both is an error), `git` for repo clones (checked inside the fetch fragment, not via the `DEPS` loop).
 - `sudo` for global installs when not root.
 
 ## Local vs global and sudo
@@ -320,16 +321,17 @@ The person who runs `install.sh` chooses with `--local` or `--global`, unless th
 - `SCOPE=global`: only global allowed. No flag installs global. `--local` exits non-zero and installs nothing.
 - `LOCAL_PREFIX` / `GLOBAL_PREFIX` are directory settings, not the user's scope choice.
 
-## Config copy, prompt, --yes, no TTY
+## Config copy, prompt, --yes
 
-When `DEFAULT_CONFIG` is set:
+Omitted `DEFAULT_CONFIG` creates nothing under `~/.config` and prints `config: skipped (no DEFAULT_CONFIG)`.
+
+When `DEFAULT_CONFIG` is a path or a generate-time command (`DEFAULT_CONFIG=!cat path/to/app.toml`):
 
 | Situation | Result | `CONFIG_INSTALLED` |
 | --- | --- | --- |
 | Destination missing | Copy | `yes` |
 | Exists + `--yes` | Replace | `yes` |
-| Exists + TTY | Prompt `Replace <path>? [y/N]` | `yes` only on `y` / `Y` / `yes` |
-| Exists + no TTY + no `--yes` | Keep existing | `no` |
+| Exists + no `--yes` | Prompt `Replace <path>? [y/N]` (even without a TTY) | `yes` only on `y` / `Y` / `yes`; empty, EOF, or any other answer keeps (`no`) |
 
 Uninstall only deletes the config when `CONFIG_INSTALLED=yes`.
 
@@ -350,7 +352,7 @@ Or with a local bats clone:
 Tests cover:
 
 - CLI validation and emit (including `BIN` patterns and `BIN_*` overrides).
-- Dummy script app install, log, uninstall, config prompt/`--yes`, global sudo, missing deps, release tar.gz, unknown arch.
+- Dummy script app install, log, uninstall, config prompt/`--yes`, `FILES=*` and file lists, `DEFAULT_CONFIG` commands, global sudo, missing deps, release tar.gz, release curl/wget fallback, unknown arch.
 - `script/bundle.sh` → `bin/installr` as a file and via stdin.
 
 Prompt tests need a pty; they skip if `pty.openpty()` fails. See [STACK.md](STACK.md).

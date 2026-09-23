@@ -29,6 +29,15 @@ render_fragment() {
   if [[ -n $APP_VERSION_RESOLVED ]]; then
     gh_version=$APP_VERSION_RESOLVED
   fi
+  local files_value=${CONF[FILES]:-}
+  files_value=${files_value#"${files_value%%[![:space:]]*}"}
+  files_value=${files_value%"${files_value##*[![:space:]]}"}
+  local files_mode=none
+  if [[ $files_value == '*' ]]; then
+    files_mode=star
+  elif [[ -n $files_value ]]; then
+    files_mode=list
+  fi
   local app_version=${APP_VERSION_RESOLVED:-unknown}
   local has_version=no
   if [[ -n $APP_VERSION_RESOLVED ]]; then
@@ -56,6 +65,8 @@ render_fragment() {
   text=$(replace_token "$text" __Q_GH_BIN_PATH_darwin_amd64__ "$(q "${CONF[GH_BIN_PATH_darwin_amd64]:-}")")
   text=$(replace_token "$text" __Q_GH_BIN_PATH_darwin_arm64__ "$(q "${CONF[GH_BIN_PATH_darwin_arm64]:-}")")
   text=$(replace_token "$text" __Q_BUILD__ "$(q "${CONF[BUILD]:-}")")
+  text=$(replace_token "$text" __FILES_MODE__ "$files_mode")
+  text=$(replace_token "$text" __Q_FILES__ "$(q "$files_value")")
   text=$(replace_token "$text" __DEPS__ "$(deps_literal)")
   text=$(replace_token "$text" __Q_SCOPE_LOCK__ "$(q "${CONF[SCOPE]:-}")")
   if [[ -n ${CONF[LOCAL_PREFIX]:-} ]]; then
@@ -68,7 +79,8 @@ render_fragment() {
   else
     text=$(replace_token "$text" __GLOBAL_PREFIX__ '/usr/local')
   fi
-  text=$(replace_token "$text" __Q_DEFAULT_CONFIG__ "$(q "${CONF[DEFAULT_CONFIG]:-}")")
+  text=$(replace_token "$text" __Q_DEFAULT_CONFIG_BODY__ "$(q "${APP_DEFAULT_CONFIG_BODY:-}")")
+  text=$(replace_token "$text" __Q_DEFAULT_CONFIG__ "$(q "${APP_DEFAULT_CONFIG_PATH:-}")")
   text=$(replace_token "$text" __Q_CONFIG_EXT__ "$(q "${CONF[CONFIG_EXT]:-toml}")")
   if [[ -n ${CONF[CONFIG_PATH]:-} ]]; then
     text=$(replace_token "$text" __CONFIG_DEST__ "$(q "${CONF[CONFIG_PATH]}")")
@@ -95,6 +107,7 @@ emit_install_sh() {
     if [[ -n ${CONF[DEPS]:-} ]]; then
       render_fragment deps
     fi
+    render_fragment layout
     if [[ ${CONF[SOURCE]} == github_release ]]; then
       render_fragment fetch_release
     else
@@ -103,6 +116,7 @@ emit_install_sh() {
         render_fragment build
       fi
     fi
+    render_fragment install_files
     render_fragment install_bin
     render_fragment install_config
     render_fragment install_record

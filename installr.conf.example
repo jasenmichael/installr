@@ -39,6 +39,23 @@ INSTALL_SCRIPT=install.sh
 # (no share/ segment for global)
 # GLOBAL_PREFIX=/usr/local
 
+# --- Files kept in the app dir (optional) -----------------------------------
+
+# Omit FILES: install the binary only. Success line: files: binary
+#
+# FILES=* puts the whole tree in the app dir.
+#   repo: git clone into $LOCAL_PREFIX/share/$APP_NAME (includes .git)
+#   release archive: unpack there; the archive file is not kept
+#   raw single-file asset: installr exits 1 (no tree)
+# The symlink points at the binary inside that tree.
+#
+# Or a comma-separated list, copied beside the binary. One pair of quotes
+# around the whole value. Globs expand at install time and keep repo paths
+# (data/foo → app-dir/data/foo). public/ and public are the same directory.
+# FILES=*,other is an error. Absolute paths and .. are errors.
+# FILES="bin/app, public/, data/*"
+# FILES=*
+
 # --- App config file (optional) ---------------------------------------------
 
 # Extension used when CONFIG_PATH is empty. Default: toml.
@@ -47,9 +64,14 @@ CONFIG_EXT=toml
 # Destination for the default config. Default: $HOME/.config/$APP_NAME.$CONFIG_EXT
 # CONFIG_PATH=$HOME/.config/installr.toml
 
-# Path inside the fetched tree (repo clone or release archive) to copy.
-# Empty or omitted skips config install. Prompt / --yes / no-TTY rules: SPEC.md, CLI.md.
+# Settings file install.sh writes for the app. Omit: no settings file is created.
+# Path inside the fetched tree, copied to CONFIG_PATH:
 # DEFAULT_CONFIG=installr.toml
+#
+# Or a command that prints the file. Leading ! runs at generate time (bash -lc),
+# same rules as VERSION. The stdout is baked into install.sh.
+# DEFAULT_CONFIG=!cat path/to/app.toml
+# Prompt / --yes rules: SPEC.md, CLI.md.
 
 # --- Extra PATH dependencies (optional) -------------------------------------
 

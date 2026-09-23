@@ -1,7 +1,7 @@
-command -v curl >/dev/null 2>&1 || {
-  printf 'install.sh: missing dep: curl\n' >&2
+if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+  printf 'install.sh: need curl or wget\n' >&2
   exit 1
-}
+fi
 
 GH_VERSION=__Q_GH_VERSION__
 GH_EXT=__Q_GH_EXT__
@@ -41,19 +41,53 @@ if [[ -z $GH_ARCHIVE ]]; then
   esac
 fi
 
+fetch_asset() {
+  local dest=$1
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$ASSET_URL" -o "$dest"
+  else
+    wget -q -O "$dest" "$ASSET_URL"
+  fi
+}
+
+FILES_MODE=__FILES_MODE__
+if [[ $FILES_MODE == star ]]; then
+  if [[ -e $APP_DIR ]]; then
+    printf 'install.sh: APP_DIR exists and is not a git repo: %s\n' "$APP_DIR" >&2
+    exit 1
+  fi
+  as_root mkdir -p -- "$APP_DIR"
+  archive_tmp=$(mktemp)
+  fetch_asset "$archive_tmp"
+  case $GH_ARCHIVE in
+    tar.gz)
+      as_root tar -xzf "$archive_tmp" -C "$APP_DIR"
+      ;;
+    zip)
+      as_root unzip -q "$archive_tmp" -d "$APP_DIR"
+      ;;
+    *)
+      printf 'install.sh: FILES=* needs a tree\n' >&2
+      exit 1
+      ;;
+  esac
+  rm -f -- "$archive_tmp"
+  STAGE=$APP_DIR
+  FETCHED_BIN=$STAGE/$BIN_INSIDE
+else
 STAGE=$(mktemp -d)
 case $GH_ARCHIVE in
   raw)
-    curl -fsSL "$ASSET_URL" -o "$STAGE/$APP_NAME"
+    fetch_asset "$STAGE/$APP_NAME"
     FETCHED_BIN=$STAGE/$APP_NAME
     ;;
   tar.gz)
-    curl -fsSL "$ASSET_URL" -o "$STAGE/asset.tar.gz"
+    fetch_asset "$STAGE/asset.tar.gz"
     tar -xzf "$STAGE/asset.tar.gz" -C "$STAGE"
     FETCHED_BIN=$STAGE/$BIN_INSIDE
     ;;
   zip)
-    curl -fsSL "$ASSET_URL" -o "$STAGE/asset.zip"
+    fetch_asset "$STAGE/asset.zip"
     unzip -q "$STAGE/asset.zip" -d "$STAGE"
     FETCHED_BIN=$STAGE/$BIN_INSIDE
     ;;
@@ -63,3 +97,4 @@ case $GH_ARCHIVE in
     ;;
 esac
 chmod +x "$FETCHED_BIN"
+fi

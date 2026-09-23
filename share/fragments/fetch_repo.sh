@@ -3,8 +3,25 @@ command -v git >/dev/null 2>&1 || {
   exit 1
 }
 
-STAGE=$(mktemp -d)
-git clone --depth 1 --branch __Q_REPO_REF__ __Q_REPO_URL__ "$STAGE"
+FILES_MODE=__FILES_MODE__
+REPO_URL=__Q_REPO_URL__
+REPO_REF=__Q_REPO_REF__
+if [[ $FILES_MODE == star ]]; then
+  if [[ -d $APP_DIR/.git ]]; then
+    as_root git -C "$APP_DIR" fetch --depth 1 origin "$REPO_REF"
+    as_root git -C "$APP_DIR" checkout --force FETCH_HEAD
+  elif [[ -e $APP_DIR ]]; then
+    printf 'install.sh: APP_DIR exists and is not a git repo: %s\n' "$APP_DIR" >&2
+    exit 1
+  else
+    as_root mkdir -p -- "$(dirname -- "$APP_DIR")"
+    as_root git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$APP_DIR"
+  fi
+  STAGE=$APP_DIR
+else
+  STAGE=$(mktemp -d)
+  git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$STAGE"
+fi
 
 BIN_PATTERN=__Q_BIN__
 BIN_OVERRIDE=

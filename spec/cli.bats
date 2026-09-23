@@ -245,6 +245,83 @@ EOF
   [[ "$stderr" == *"SOURCE"* ]]
 }
 
+@test "FILES=* passes --check" {
+  cat > installr.conf <<'EOF'
+APP_NAME=dummy
+SOURCE=repo
+REPO_URL=https://example.com/dummy.git
+BIN=dummy
+FILES=*
+EOF
+  run --separate-stderr "$INSTALLR" --check
+  [ "$status" -eq 0 ]
+  [ ! -e install.sh ]
+}
+
+@test "FILES=* mixed with other paths exits 1 and names FILES" {
+  cat > installr.conf <<'EOF'
+APP_NAME=dummy
+SOURCE=repo
+REPO_URL=https://example.com/dummy.git
+BIN=dummy
+FILES=*,dummy.toml
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"FILES"* ]]
+  [ ! -e install.sh ]
+}
+
+@test "FILES absolute path exits 1 and names FILES" {
+  cat > installr.conf <<'EOF'
+APP_NAME=dummy
+SOURCE=repo
+REPO_URL=https://example.com/dummy.git
+BIN=dummy
+FILES=/tmp/x
+EOF
+  run --separate-stderr "$INSTALLR" --check
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"FILES"* ]]
+}
+
+@test "FILES with .. exits 1 and names FILES" {
+  cat > installr.conf <<'EOF'
+APP_NAME=dummy
+SOURCE=repo
+REPO_URL=https://example.com/dummy.git
+BIN=dummy
+FILES=foo/../bar
+EOF
+  run --separate-stderr "$INSTALLR" --check
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"FILES"* ]]
+}
+
+@test "FILES=* on a raw release exits 1 and names FILES" {
+  cat > installr.conf <<'EOF'
+APP_NAME=dummy
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/dummy
+FILES=*
+EOF
+  run --separate-stderr "$INSTALLR" --check
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"FILES"* ]]
+}
+
+@test "FILES list with spaces after commas passes --check" {
+  cat > installr.conf <<'EOF'
+APP_NAME=dummy
+SOURCE=repo
+REPO_URL=https://example.com/dummy.git
+BIN=dummy
+FILES="dummy.toml, other.txt"
+EOF
+  run --separate-stderr "$INSTALLR" --check
+  [ "$status" -eq 0 ]
+}
+
 @test "bad SCOPE exits 1 and names the field" {
   cat > installr.conf <<'EOF'
 APP_NAME=dummy
@@ -273,6 +350,7 @@ EOF
   [[ "$output" == *"LOCAL_PREFIX"* ]]
   [[ "$output" == *"GLOBAL_PREFIX"* ]]
   [[ "$output" == *"DEFAULT_CONFIG"* ]]
+  [[ "$output" == *"FILES"* ]]
   [[ "$output" == *"CONFIG_EXT"* ]]
   [[ "$output" == *"CONFIG_PATH"* ]]
   [[ "$output" == *"DEPS"* ]]
@@ -347,6 +425,31 @@ EOF
   run --separate-stderr ./install.sh -v
   [ "$status" -eq 0 ]
   [ "$output" = "myapp 9.9.9" ]
+}
+
+@test "DEFAULT_CONFIG command failure exits 1 and names DEFAULT_CONFIG" {
+  cat > installr.conf <<'EOF'
+APP_NAME=myapp
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/x
+DEFAULT_CONFIG=!false
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"DEFAULT_CONFIG"* ]]
+  [ ! -e install.sh ]
+}
+
+@test "DEFAULT_CONFIG command with empty stdout exits 1 and names DEFAULT_CONFIG" {
+  cat > installr.conf <<'EOF'
+APP_NAME=myapp
+SOURCE=github_release
+GH_ASSET_URL=https://example.com/x
+DEFAULT_CONFIG=!true
+EOF
+  run --separate-stderr "$INSTALLR"
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"DEFAULT_CONFIG"* ]]
 }
 
 @test "VERSION=!false exits 1 and names VERSION" {

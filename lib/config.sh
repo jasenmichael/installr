@@ -6,7 +6,7 @@ config_key_known() {
   case "$1" in
     APP_NAME | SOURCE | GH_ASSET_URL | INSTALL_SCRIPT | REPO_URL | REPO_REF | BUILD | DEPS | BIN | \
       SCOPE | LOCAL_PREFIX | GLOBAL_PREFIX | DEFAULT_CONFIG | CONFIG_EXT | CONFIG_PATH | \
-      VERSION | GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | \
+      VERSION | GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | FILES | \
       GH_BIN_PATH_linux_amd64 | GH_BIN_PATH_linux_arm64 | GH_BIN_PATH_darwin_amd64 | GH_BIN_PATH_darwin_arm64 | \
       BIN_linux_amd64 | BIN_linux_arm64 | BIN_darwin_amd64 | BIN_darwin_arm64) return 0 ;;
     *) return 1 ;;
@@ -16,6 +16,8 @@ config_key_known() {
 # Resolve CONF[VERSION] into APP_VERSION_RESOLVED (literal or !command).
 # Empty VERSION leaves APP_VERSION_RESOLVED empty (install.sh --version → unknown).
 declare -g APP_VERSION_RESOLVED=""
+declare -g APP_DEFAULT_CONFIG_PATH=""
+declare -g APP_DEFAULT_CONFIG_BODY=""
 
 resolve_version() {
   local raw=${CONF[VERSION]:-} out
@@ -36,6 +38,30 @@ resolve_version() {
     exit 1
   fi
   APP_VERSION_RESOLVED=$out
+}
+
+# Resolve CONF[DEFAULT_CONFIG] into a fetched-tree path or a baked file body.
+# A leading ! runs at generate time, same as VERSION. Unprefixed values are paths.
+resolve_default_config() {
+  local raw=${CONF[DEFAULT_CONFIG]:-} out
+  APP_DEFAULT_CONFIG_PATH=""
+  APP_DEFAULT_CONFIG_BODY=""
+  [[ -z $raw ]] && return 0
+  if [[ $raw == !* ]]; then
+    if ! out=$(bash -lc "${raw#!}"); then
+      printf 'installr: DEFAULT_CONFIG command failed\n' >&2
+      exit 1
+    fi
+    out=${out#"${out%%[![:space:]]*}"}
+    out=${out%"${out##*[![:space:]]}"}
+    if [[ -z $out ]]; then
+      printf 'installr: DEFAULT_CONFIG produced empty output\n' >&2
+      exit 1
+    fi
+    APP_DEFAULT_CONFIG_BODY=$out
+  else
+    APP_DEFAULT_CONFIG_PATH=$raw
+  fi
 }
 
 load_config() {

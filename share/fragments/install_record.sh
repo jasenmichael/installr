@@ -15,7 +15,7 @@ write_root() {
 write_root "$APP_DIR/install.log" <<EOF
 APP_NAME=$APP_NAME
 APP_DIR=$APP_DIR
-BIN=$APP_DIR/$APP_NAME
+BIN=$INSTALLED_BIN
 SYMLINK=$BIN_DIR/$APP_NAME
 CONFIG=$CONFIG_DEST
 CONFIG_INSTALLED=$CONFIG_INSTALLED
@@ -85,11 +85,12 @@ if [[ ${HAS_VERSION:-no} == yes ]]; then
 fi
 printf 'installed: %s\n' "$APP_DIR"
 printf 'symlink: %s\n' "$BIN_DIR/$APP_NAME"
+printf 'files: %s\n' "$FILES_SUMMARY"
 case ${CONFIG_ACTION:-skipped} in
   copied) printf 'config: copied %s\n' "$CONFIG_DEST" ;;
   replaced) printf 'config: replaced %s\n' "$CONFIG_DEST" ;;
   left) printf 'config: left in place %s\n' "$CONFIG_DEST" ;;
-  *) printf 'config: skipped\n' ;;
+  *) printf 'config: skipped (no DEFAULT_CONFIG)\n' ;;
 esac
 if [[ $USED_SUDO == yes ]]; then
   printf 'scope: %s (sudo)\n' "$SCOPE"

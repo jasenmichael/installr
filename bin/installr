@@ -18,10 +18,10 @@ done
 INSTALLR_FRAGMENT_END
 )
 FRAGMENT_fetch_release=$(cat <<'INSTALLR_FRAGMENT_END'
-command -v curl >/dev/null 2>&1 || {
-  printf 'install.sh: missing dep: curl\n' >&2
+if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+  printf 'install.sh: need curl or wget\n' >&2
   exit 1
-}
+fi
 
 GH_VERSION=__Q_GH_VERSION__
 GH_EXT=__Q_GH_EXT__
@@ -61,19 +61,53 @@ if [[ -z $GH_ARCHIVE ]]; then
   esac
 fi
 
+fetch_asset() {
+  local dest=$1
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$ASSET_URL" -o "$dest"
+  else
+    wget -q -O "$dest" "$ASSET_URL"
+  fi
+}
+
+FILES_MODE=__FILES_MODE__
+if [[ $FILES_MODE == star ]]; then
+  if [[ -e $APP_DIR ]]; then
+    printf 'install.sh: APP_DIR exists and is not a git repo: %s\n' "$APP_DIR" >&2
+    exit 1
+  fi
+  as_root mkdir -p -- "$APP_DIR"
+  archive_tmp=$(mktemp)
+  fetch_asset "$archive_tmp"
+  case $GH_ARCHIVE in
+    tar.gz)
+      as_root tar -xzf "$archive_tmp" -C "$APP_DIR"
+      ;;
+    zip)
+      as_root unzip -q "$archive_tmp" -d "$APP_DIR"
+      ;;
+    *)
+      printf 'install.sh: FILES=* needs a tree\n' >&2
+      exit 1
+      ;;
+  esac
+  rm -f -- "$archive_tmp"
+  STAGE=$APP_DIR
+  FETCHED_BIN=$STAGE/$BIN_INSIDE
+else
 STAGE=$(mktemp -d)
 case $GH_ARCHIVE in
   raw)
-    curl -fsSL "$ASSET_URL" -o "$STAGE/$APP_NAME"
+    fetch_asset "$STAGE/$APP_NAME"
     FETCHED_BIN=$STAGE/$APP_NAME
     ;;
   tar.gz)
-    curl -fsSL "$ASSET_URL" -o "$STAGE/asset.tar.gz"
+    fetch_asset "$STAGE/asset.tar.gz"
     tar -xzf "$STAGE/asset.tar.gz" -C "$STAGE"
     FETCHED_BIN=$STAGE/$BIN_INSIDE
     ;;
   zip)
-    curl -fsSL "$ASSET_URL" -o "$STAGE/asset.zip"
+    fetch_asset "$STAGE/asset.zip"
     unzip -q "$STAGE/asset.zip" -d "$STAGE"
     FETCHED_BIN=$STAGE/$BIN_INSIDE
     ;;
@@ -83,6 +117,7 @@ case $GH_ARCHIVE in
     ;;
 esac
 chmod +x "$FETCHED_BIN"
+fi
 
 INSTALLR_FRAGMENT_END
 )
@@ -92,8 +127,25 @@ command -v git >/dev/null 2>&1 || {
   exit 1
 }
 
-STAGE=$(mktemp -d)
-git clone --depth 1 --branch __Q_REPO_REF__ __Q_REPO_URL__ "$STAGE"
+FILES_MODE=__FILES_MODE__
+REPO_URL=__Q_REPO_URL__
+REPO_REF=__Q_REPO_REF__
+if [[ $FILES_MODE == star ]]; then
+  if [[ -d $APP_DIR/.git ]]; then
+    as_root git -C "$APP_DIR" fetch --depth 1 origin "$REPO_REF"
+    as_root git -C "$APP_DIR" checkout --force FETCH_HEAD
+  elif [[ -e $APP_DIR ]]; then
+    printf 'install.sh: APP_DIR exists and is not a git repo: %s\n' "$APP_DIR" >&2
+    exit 1
+  else
+    as_root mkdir -p -- "$(dirname -- "$APP_DIR")"
+    as_root git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$APP_DIR"
+  fi
+  STAGE=$APP_DIR
+else
+  STAGE=$(mktemp -d)
+  git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$STAGE"
+fi
 
 BIN_PATTERN=__Q_BIN__
 BIN_OVERRIDE=
@@ -192,45 +244,34 @@ done
 INSTALLR_FRAGMENT_END
 )
 FRAGMENT_install_bin=$(cat <<'INSTALLR_FRAGMENT_END'
-LOCAL_PREFIX=__LOCAL_PREFIX__
-GLOBAL_PREFIX=__GLOBAL_PREFIX__
-
-if [[ $SCOPE == global ]]; then
-  PREFIX=$GLOBAL_PREFIX
-  APP_DIR=$PREFIX/$APP_NAME
-  BIN_DIR=$PREFIX/bin
+FILES_MODE=__FILES_MODE__
+if [[ $FILES_MODE == star ]]; then
+  as_root mkdir -p -- "$BIN_DIR"
+  as_root chmod +x "$FETCHED_BIN"
+  as_root ln -sfn -- "$FETCHED_BIN" "$BIN_DIR/$APP_NAME"
+  INSTALLED_BIN=$FETCHED_BIN
+  FILES_SUMMARY='*'
 else
-  PREFIX=$LOCAL_PREFIX
-  APP_DIR=$PREFIX/share/$APP_NAME
-  BIN_DIR=$PREFIX/bin
-fi
-USED_SUDO=no
-if [[ $SCOPE == global && $(id -u) -ne 0 ]]; then
-  USED_SUDO=yes
-fi
-
-as_root() {
-  if [[ $USED_SUDO == yes ]]; then
-    sudo "$@"
-  else
-    "$@"
+  as_root mkdir -p -- "$APP_DIR" "$BIN_DIR"
+  as_root cp -- "$FETCHED_BIN" "$APP_DIR/$APP_NAME"
+  as_root chmod +x "$APP_DIR/$APP_NAME"
+  as_root ln -sfn -- "$APP_DIR/$APP_NAME" "$BIN_DIR/$APP_NAME"
+  INSTALLED_BIN=$APP_DIR/$APP_NAME
+  if [[ $FILES_MODE != list ]]; then
+    FILES_SUMMARY=binary
   fi
-}
-
-as_root mkdir -p -- "$APP_DIR" "$BIN_DIR"
-as_root cp -- "$FETCHED_BIN" "$APP_DIR/$APP_NAME"
-as_root chmod +x "$APP_DIR/$APP_NAME"
-as_root ln -sfn -- "$APP_DIR/$APP_NAME" "$BIN_DIR/$APP_NAME"
+fi
 
 INSTALLR_FRAGMENT_END
 )
 FRAGMENT_install_config=$(cat <<'INSTALLR_FRAGMENT_END'
 DEFAULT_CONFIG=__Q_DEFAULT_CONFIG__
+DEFAULT_CONFIG_BODY=__Q_DEFAULT_CONFIG_BODY__
 CONFIG_EXT=__Q_CONFIG_EXT__
 CONFIG_INSTALLED=no
 CONFIG_DEST=
 CONFIG_ACTION=skipped
-if [[ -n $DEFAULT_CONFIG ]]; then
+if [[ -n $DEFAULT_CONFIG || -n $DEFAULT_CONFIG_BODY ]]; then
   CONFIG_DEST=__CONFIG_DEST__
   replace=no
   existed=no
@@ -241,7 +282,7 @@ if [[ -n $DEFAULT_CONFIG ]]; then
     replace=yes
   elif [[ $ASSUME_YES == yes ]]; then
     replace=yes
-  elif [[ -t 0 ]]; then
+  else
     read -r -p "Replace $CONFIG_DEST? [y/N] " ans || true
     if [[ ${ans:-} == y || ${ans:-} == Y || ${ans:-} == yes ]]; then
       replace=yes
@@ -249,7 +290,11 @@ if [[ -n $DEFAULT_CONFIG ]]; then
   fi
   if [[ $replace == yes ]]; then
     mkdir -p -- "$(dirname -- "$CONFIG_DEST")"
-    cp -- "$STAGE/$DEFAULT_CONFIG" "$CONFIG_DEST"
+    if [[ -n $DEFAULT_CONFIG_BODY ]]; then
+      printf '%s\n' "$DEFAULT_CONFIG_BODY" > "$CONFIG_DEST"
+    else
+      cp -- "$STAGE/$DEFAULT_CONFIG" "$CONFIG_DEST"
+    fi
     CONFIG_INSTALLED=yes
     if [[ $existed == yes ]]; then
       CONFIG_ACTION=replaced
@@ -259,6 +304,59 @@ if [[ -n $DEFAULT_CONFIG ]]; then
   else
     CONFIG_ACTION=left
   fi
+fi
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_install_files=$(cat <<'INSTALLR_FRAGMENT_END'
+FILES_MODE=__FILES_MODE__
+FILES_SPEC=__Q_FILES__
+if [[ $FILES_MODE == list ]]; then
+  IFS=',' read -ra _files_items <<< "$FILES_SPEC"
+  _files_rels=()
+  for _files_raw in "${_files_items[@]}"; do
+    item=${_files_raw#"${_files_raw%%[![:space:]]*}"}
+    item=${item%"${item##*[![:space:]]}"}
+    item=${item%/}
+    if [[ $item == *'*'* || $item == *'?'* || $item == *'['* ]]; then
+      _files_matches=()
+      while IFS= read -r _files_match; do
+        [[ -n $_files_match ]] || continue
+        _files_matches+=("$_files_match")
+      done < <(cd "$STAGE" && compgen -G "$item" || true)
+      if [[ ${#_files_matches[@]} -eq 0 ]]; then
+        printf 'install.sh: FILES missing: %s\n' "$item" >&2
+        exit 1
+      fi
+      for _files_match in "${_files_matches[@]}"; do
+        _files_rels+=("$_files_match")
+      done
+    else
+      if [[ ! -e "$STAGE/$item" ]]; then
+        printf 'install.sh: FILES missing: %s\n' "$item" >&2
+        exit 1
+      fi
+      _files_rels+=("$item")
+    fi
+  done
+  as_root mkdir -p -- "$APP_DIR"
+  for rel in "${_files_rels[@]}"; do
+    dest=$APP_DIR/$rel
+    as_root mkdir -p -- "$(dirname -- "$dest")"
+    if [[ -d $STAGE/$rel ]]; then
+      as_root cp -a -- "$STAGE/$rel" "$APP_DIR/$(dirname -- "$rel")/"
+    else
+      as_root cp -a -- "$STAGE/$rel" "$dest"
+    fi
+  done
+  FILES_SUMMARY=""
+  for rel in "${_files_rels[@]}"; do
+    if [[ -z $FILES_SUMMARY ]]; then
+      FILES_SUMMARY=$rel
+    else
+      FILES_SUMMARY="$FILES_SUMMARY, $rel"
+    fi
+  done
 fi
 
 INSTALLR_FRAGMENT_END
@@ -281,7 +379,7 @@ write_root() {
 write_root "$APP_DIR/install.log" <<EOF
 APP_NAME=$APP_NAME
 APP_DIR=$APP_DIR
-BIN=$APP_DIR/$APP_NAME
+BIN=$INSTALLED_BIN
 SYMLINK=$BIN_DIR/$APP_NAME
 CONFIG=$CONFIG_DEST
 CONFIG_INSTALLED=$CONFIG_INSTALLED
@@ -351,11 +449,12 @@ if [[ ${HAS_VERSION:-no} == yes ]]; then
 fi
 printf 'installed: %s\n' "$APP_DIR"
 printf 'symlink: %s\n' "$BIN_DIR/$APP_NAME"
+printf 'files: %s\n' "$FILES_SUMMARY"
 case ${CONFIG_ACTION:-skipped} in
   copied) printf 'config: copied %s\n' "$CONFIG_DEST" ;;
   replaced) printf 'config: replaced %s\n' "$CONFIG_DEST" ;;
   left) printf 'config: left in place %s\n' "$CONFIG_DEST" ;;
-  *) printf 'config: skipped\n' ;;
+  *) printf 'config: skipped (no DEFAULT_CONFIG)\n' ;;
 esac
 if [[ $USED_SUDO == yes ]]; then
   printf 'scope: %s (sudo)\n' "$SCOPE"
@@ -366,6 +465,34 @@ case :$PATH: in
   *:"$BIN_DIR":*) ;;
   *) printf 'export PATH="%s:$PATH"\n' "$BIN_DIR" ;;
 esac
+
+INSTALLR_FRAGMENT_END
+)
+FRAGMENT_layout=$(cat <<'INSTALLR_FRAGMENT_END'
+LOCAL_PREFIX=__LOCAL_PREFIX__
+GLOBAL_PREFIX=__GLOBAL_PREFIX__
+
+if [[ $SCOPE == global ]]; then
+  PREFIX=$GLOBAL_PREFIX
+  APP_DIR=$PREFIX/$APP_NAME
+  BIN_DIR=$PREFIX/bin
+else
+  PREFIX=$LOCAL_PREFIX
+  APP_DIR=$PREFIX/share/$APP_NAME
+  BIN_DIR=$PREFIX/bin
+fi
+USED_SUDO=no
+if [[ $SCOPE == global && $(id -u) -ne 0 ]]; then
+  USED_SUDO=yes
+fi
+
+as_root() {
+  if [[ $USED_SUDO == yes ]]; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
 
 INSTALLR_FRAGMENT_END
 )
@@ -398,7 +525,7 @@ config_key_known() {
   case "$1" in
     APP_NAME | SOURCE | GH_ASSET_URL | INSTALL_SCRIPT | REPO_URL | REPO_REF | BUILD | DEPS | BIN | \
       SCOPE | LOCAL_PREFIX | GLOBAL_PREFIX | DEFAULT_CONFIG | CONFIG_EXT | CONFIG_PATH | \
-      VERSION | GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | \
+      VERSION | GH_VERSION | GH_EXT | GH_REPO | GH_ARCHIVE | GH_BIN_PATH | FILES | \
       GH_BIN_PATH_linux_amd64 | GH_BIN_PATH_linux_arm64 | GH_BIN_PATH_darwin_amd64 | GH_BIN_PATH_darwin_arm64 | \
       BIN_linux_amd64 | BIN_linux_arm64 | BIN_darwin_amd64 | BIN_darwin_arm64) return 0 ;;
     *) return 1 ;;
@@ -408,6 +535,8 @@ config_key_known() {
 # Resolve CONF[VERSION] into APP_VERSION_RESOLVED (literal or !command).
 # Empty VERSION leaves APP_VERSION_RESOLVED empty (install.sh --version → unknown).
 declare -g APP_VERSION_RESOLVED=""
+declare -g APP_DEFAULT_CONFIG_PATH=""
+declare -g APP_DEFAULT_CONFIG_BODY=""
 
 resolve_version() {
   local raw=${CONF[VERSION]:-} out
@@ -428,6 +557,30 @@ resolve_version() {
     exit 1
   fi
   APP_VERSION_RESOLVED=$out
+}
+
+# Resolve CONF[DEFAULT_CONFIG] into a fetched-tree path or a baked file body.
+# A leading ! runs at generate time, same as VERSION. Unprefixed values are paths.
+resolve_default_config() {
+  local raw=${CONF[DEFAULT_CONFIG]:-} out
+  APP_DEFAULT_CONFIG_PATH=""
+  APP_DEFAULT_CONFIG_BODY=""
+  [[ -z $raw ]] && return 0
+  if [[ $raw == !* ]]; then
+    if ! out=$(bash -lc "${raw#!}"); then
+      printf 'installr: DEFAULT_CONFIG command failed\n' >&2
+      exit 1
+    fi
+    out=${out#"${out%%[![:space:]]*}"}
+    out=${out%"${out##*[![:space:]]}"}
+    if [[ -z $out ]]; then
+      printf 'installr: DEFAULT_CONFIG produced empty output\n' >&2
+      exit 1
+    fi
+    APP_DEFAULT_CONFIG_BODY=$out
+  else
+    APP_DEFAULT_CONFIG_PATH=$raw
+  fi
 }
 
 load_config() {
@@ -499,6 +652,68 @@ validate_config() {
       exit 1
     fi
   fi
+  validate_files
+}
+
+files_archive_kind() {
+  local archive=${CONF[GH_ARCHIVE]:-} url=${CONF[GH_ASSET_URL]:-}
+  if [[ -n $archive ]]; then
+    printf '%s' "$archive"
+    return
+  fi
+  case $url in
+    *.tar.gz | *.tgz) printf 'tar.gz' ;;
+    *.zip) printf 'zip' ;;
+    *) printf 'raw' ;;
+  esac
+}
+
+validate_files_item() {
+  local item=$1
+  if [[ -z $item ]]; then
+    printf 'installr: FILES has an empty item\n' >&2
+    exit 1
+  fi
+  if [[ $item == /* ]]; then
+    printf 'installr: FILES must be a relative path\n' >&2
+    exit 1
+  fi
+  if [[ $item == *..* ]]; then
+    printf 'installr: FILES must not contain ..\n' >&2
+    exit 1
+  fi
+}
+
+validate_files() {
+  local files=${CONF[FILES]:-} item
+  files=${files#"${files%%[![:space:]]*}"}
+  files=${files%"${files##*[![:space:]]}"}
+  [[ -z $files ]] && return 0
+  if [[ $files == '*' ]]; then
+    if [[ ${CONF[SOURCE]} == github_release ]]; then
+      case $(files_archive_kind) in
+        tar.gz | zip) ;;
+        *)
+          printf 'installr: FILES=* needs a tree\n' >&2
+          exit 1
+          ;;
+      esac
+    fi
+    return 0
+  fi
+  local IFS=','
+  local -a items
+  read -ra items <<< "$files"
+  for item in "${items[@]}"; do
+    item=${item#"${item%%[![:space:]]*}"}
+    item=${item%"${item##*[![:space:]]}"}
+    item=${item%/}
+    if [[ $item == '*' ]]; then
+      printf 'installr: FILES=* must be the only item\n' >&2
+      exit 1
+    fi
+    validate_files_item "$item"
+  done
 }
 q() {
   local s=$1
@@ -531,6 +746,15 @@ render_fragment() {
   if [[ -n $APP_VERSION_RESOLVED ]]; then
     gh_version=$APP_VERSION_RESOLVED
   fi
+  local files_value=${CONF[FILES]:-}
+  files_value=${files_value#"${files_value%%[![:space:]]*}"}
+  files_value=${files_value%"${files_value##*[![:space:]]}"}
+  local files_mode=none
+  if [[ $files_value == '*' ]]; then
+    files_mode=star
+  elif [[ -n $files_value ]]; then
+    files_mode=list
+  fi
   local app_version=${APP_VERSION_RESOLVED:-unknown}
   local has_version=no
   if [[ -n $APP_VERSION_RESOLVED ]]; then
@@ -558,6 +782,8 @@ render_fragment() {
   text=$(replace_token "$text" __Q_GH_BIN_PATH_darwin_amd64__ "$(q "${CONF[GH_BIN_PATH_darwin_amd64]:-}")")
   text=$(replace_token "$text" __Q_GH_BIN_PATH_darwin_arm64__ "$(q "${CONF[GH_BIN_PATH_darwin_arm64]:-}")")
   text=$(replace_token "$text" __Q_BUILD__ "$(q "${CONF[BUILD]:-}")")
+  text=$(replace_token "$text" __FILES_MODE__ "$files_mode")
+  text=$(replace_token "$text" __Q_FILES__ "$(q "$files_value")")
   text=$(replace_token "$text" __DEPS__ "$(deps_literal)")
   text=$(replace_token "$text" __Q_SCOPE_LOCK__ "$(q "${CONF[SCOPE]:-}")")
   if [[ -n ${CONF[LOCAL_PREFIX]:-} ]]; then
@@ -570,7 +796,8 @@ render_fragment() {
   else
     text=$(replace_token "$text" __GLOBAL_PREFIX__ '/usr/local')
   fi
-  text=$(replace_token "$text" __Q_DEFAULT_CONFIG__ "$(q "${CONF[DEFAULT_CONFIG]:-}")")
+  text=$(replace_token "$text" __Q_DEFAULT_CONFIG_BODY__ "$(q "${APP_DEFAULT_CONFIG_BODY:-}")")
+  text=$(replace_token "$text" __Q_DEFAULT_CONFIG__ "$(q "${APP_DEFAULT_CONFIG_PATH:-}")")
   text=$(replace_token "$text" __Q_CONFIG_EXT__ "$(q "${CONF[CONFIG_EXT]:-toml}")")
   if [[ -n ${CONF[CONFIG_PATH]:-} ]]; then
     text=$(replace_token "$text" __CONFIG_DEST__ "$(q "${CONF[CONFIG_PATH]}")")
@@ -597,6 +824,7 @@ emit_install_sh() {
     if [[ -n ${CONF[DEPS]:-} ]]; then
       render_fragment deps
     fi
+    render_fragment layout
     if [[ ${CONF[SOURCE]} == github_release ]]; then
       render_fragment fetch_release
     else
@@ -605,6 +833,7 @@ emit_install_sh() {
         render_fragment build
       fi
     fi
+    render_fragment install_files
     render_fragment install_bin
     render_fragment install_config
     render_fragment install_record
@@ -657,7 +886,21 @@ Config keys (installr.conf; KEY=value; not sourced):
     CONFIG_EXT         optional, default toml — used when CONFIG_PATH empty.
     CONFIG_PATH        optional, default $HOME/.config/$APP_NAME.$CONFIG_EXT —
                        destination for default config.
-    DEFAULT_CONFIG     optional, empty — path inside fetched tree; empty skips copy.
+    DEFAULT_CONFIG     optional, empty — omit writes no settings file.
+                       Path inside the fetched tree, or a command:
+                       DEFAULT_CONFIG=!cat path/to/app.toml
+                       ! runs via bash -lc at generate time; trim stdout;
+                       non-zero or empty → exit 1. No ! means a path, never run.
+                       Same replace prompt and --yes rules either way.
+
+  App dir payload
+    FILES              optional, empty — omit = binary only (files: binary).
+                       FILES=* puts the fetched tree in the app dir
+                       (git clone includes .git; archive unpacks; raw asset errors).
+                       Or a comma-separated list copied beside the binary.
+                       Quote the whole value: FILES="lib/, data/*".
+                       Globs expand at install time and keep repo paths.
+                       * mixed with other items, absolute paths, and .. fail.
 
   Deps
     DEPS               optional, empty — space-separated PATH commands to require.
@@ -751,6 +994,7 @@ main() {
   load_config "$config"
   validate_config
   resolve_version
+  resolve_default_config
   if [[ $check == 1 ]]; then
     exit 0
   fi
